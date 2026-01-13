@@ -1,9 +1,11 @@
 import Ajv from 'ajv';
 import type { ErrorObject } from 'ajv';
+import addFormats from 'ajv-formats';
 import { standardSchema, ecommerceSchema, hotelSchema } from '../resources/schemas.js';
 import type { ValidationResult, ValidationError, ValidationWarning } from '../types/index.js';
 
 const ajv = new Ajv.default({ allErrors: true, verbose: true });
+addFormats.default(ajv);
 
 // Add compiled schemas
 ajv.addSchema(standardSchema);
