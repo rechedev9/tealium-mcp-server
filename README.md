@@ -102,6 +102,100 @@ Ask Claude:
 
 Then paste CSV content with columns like: variable, type, required, description
 
+## Daily Workflow
+
+### 1. Validating Implementations
+
+When a developer sends a data layer for review or when checking a live page:
+
+```
+"Validate this data layer against the hotel schema:
+{
+  page: { pageName: 'Booking Confirmation', pageType: 'confirmation' },
+  hotel: { hotelCode: 'BCN001', hotelName: 'Barceló Sants' },
+  booking: { bookingId: 'RES123', bookingTotal: 450, bookingCurrency: 'EUR' }
+}"
+```
+
+### 2. Debugging Tracking Issues
+
+When something isn't tracking correctly (e.g., QA finds missing data in reports):
+
+```
+"Debug this data layer from the booking page - events aren't firing correctly:
+[paste JSON from browser console: copy(utag_data)]"
+```
+
+The tool will identify:
+- Missing required variables
+- Wrong data types (string vs number)
+- Invalid dates
+- Empty values
+- PII exposure risks
+
+### 3. Creating Documentation
+
+When onboarding new developers or updating tracking specs:
+
+```
+"Generate documentation for our hotel booking data layer"
+```
+
+Or from an existing spec:
+```
+"Parse this tracking spec and generate documentation:
+[paste CSV from Google Sheets]"
+```
+
+### 4. Generating Code for Developers
+
+When developers need implementation code:
+
+```
+"Generate TypeScript code for our booking funnel data layer with these events:
+- search.initiated
+- hotel.viewed
+- room.selected
+- booking.completed"
+```
+
+### 5. Reviewing New Tracking Specs
+
+When the analytics team sends a new tracking requirement (usually a spreadsheet):
+
+```
+"Parse this tracking spec from our Google Sheet:
+
+variable,type,required,description
+page.pageName,string,true,Page identifier
+booking.bookingTotal,number,true,Total booking amount
+booking.bookingCurrency,string,true,ISO currency code
+..."
+```
+
+## Quick Reference
+
+| Task | Ask Claude |
+|------|-----------|
+| Validate data layer | *"Validate this data layer: {...}"* |
+| Debug issues | *"Debug this data layer: {...}"* |
+| Generate docs | *"Generate documentation for this spec"* |
+| Generate code | *"Generate TypeScript for this data layer"* |
+| Parse spreadsheet | *"Parse this tracking spec: [CSV]"* |
+| Get best practices | *"Show me Tealium best practices"* |
+| Get hotel template | *"Show me the hotel booking template"* |
+
+## Pro Tip: Browser Console
+
+To quickly grab the data layer from any page:
+
+```javascript
+// In browser DevTools console:
+copy(JSON.stringify(utag_data, null, 2))
+```
+
+Then paste it into Claude with *"Debug this data layer"* or *"Validate this"*.
+
 ## Testing
 
 ```bash
