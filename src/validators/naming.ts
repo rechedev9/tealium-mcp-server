@@ -1,35 +1,47 @@
 import type { ValidationWarning } from '../types/index.js';
+import { isRecord } from '../types/index.js';
 
 // Check if a string is camelCase
 function isCamelCase(str: string): boolean {
   return /^[a-z][a-zA-Z0-9]*$/.test(str);
 }
 
-// Check if a string starts with a known prefix
-const KNOWN_PREFIXES = [
-  'page', 'user', 'event', 'product', 'transaction',
-  'search', 'hotel', 'room', 'booking', 'guest'
+// Known prefixes for data layer sections
+const KNOWN_PREFIXES: readonly string[] = [
+  'page',
+  'user',
+  'event',
+  'product',
+  'transaction',
+  'search',
+  'hotel',
+  'room',
+  'booking',
+  'guest',
 ];
 
 function hasKnownPrefix(str: string): boolean {
-  return KNOWN_PREFIXES.some(prefix =>
-    str.toLowerCase().startsWith(prefix.toLowerCase())
-  );
+  return KNOWN_PREFIXES.some((prefix) => str.toLowerCase().startsWith(prefix.toLowerCase()));
 }
 
 // Reserved words that shouldn't be used as variable names
-const RESERVED_WORDS = [
-  'undefined', 'null', 'true', 'false', 'function', 'object'
+const RESERVED_WORDS: readonly string[] = [
+  'undefined',
+  'null',
+  'true',
+  'false',
+  'function',
+  'object',
 ];
 
 export function checkNamingConventions(
   dataLayer: Record<string, unknown>,
-  path: string = ''
+  path = ''
 ): ValidationWarning[] {
   const warnings: ValidationWarning[] = [];
 
   for (const [key, value] of Object.entries(dataLayer)) {
-    const currentPath = path ? `${path}.${key}` : key;
+    const currentPath = path !== '' ? `${path}.${key}` : key;
 
     // Check for non-camelCase keys
     if (!isCamelCase(key) && !KNOWN_PREFIXES.includes(key)) {
@@ -68,8 +80,8 @@ export function checkNamingConventions(
     }
 
     // Recursively check nested objects
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      warnings.push(...checkNamingConventions(value as Record<string, unknown>, currentPath));
+    if (isRecord(value)) {
+      warnings.push(...checkNamingConventions(value, currentPath));
     }
   }
 
@@ -78,24 +90,21 @@ export function checkNamingConventions(
 
 function toCamelCase(str: string): string {
   return str
-    .replace(/[-_\s]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''))
+    .replace(/[-_\s]+(.)?/g, (_, c: string | undefined) => (c !== undefined ? c.toUpperCase() : ''))
     .replace(/^(.)/, (c) => c.toLowerCase());
 }
 
 export function suggestVariableName(input: string): string {
   // Remove special characters and convert to camelCase
-  let result = input
+  const result = input
     .trim()
     .replace(/[^a-zA-Z0-9\s_-]/g, '')
-    .replace(/[-_\s]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''))
+    .replace(/[-_\s]+(.)?/g, (_, c: string | undefined) => (c !== undefined ? c.toUpperCase() : ''))
     .replace(/^(.)/, (c) => c.toLowerCase());
 
   // Add appropriate prefix if missing
   if (!hasKnownPrefix(result)) {
-    // Try to infer prefix from common patterns
-    if (result.toLowerCase().includes('name') && !result.toLowerCase().includes('page')) {
-      // Could be pageName, productName, etc.
-    }
+    // Could add logic to infer prefix from common patterns
   }
 
   return result;

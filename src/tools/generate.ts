@@ -1,20 +1,21 @@
 import type { TrackingSpec, TrackingVariable, GeneratedCode } from '../types/index.js';
+import { isRecord, isTrackingSpec } from '../types/index.js';
 
 export interface GenerateCodeArgs {
-  spec?: TrackingSpec;
-  dataLayer?: Record<string, unknown>;
-  language?: 'typescript' | 'javascript';
-  includeHelpers?: boolean;
+  readonly spec?: unknown;
+  readonly dataLayer?: unknown;
+  readonly language?: 'typescript' | 'javascript';
+  readonly includeHelpers?: boolean;
 }
 
 export function generateCode(args: GenerateCodeArgs): GeneratedCode {
   const { spec, dataLayer, language = 'typescript', includeHelpers = true } = args;
 
-  if (spec) {
+  if (spec !== undefined && isTrackingSpec(spec)) {
     return generateCodeFromSpec(spec, language, includeHelpers);
   }
 
-  if (dataLayer) {
+  if (dataLayer !== undefined && isRecord(dataLayer)) {
     return generateCodeFromDataLayer(dataLayer, language, includeHelpers);
   }
 
@@ -46,8 +47,10 @@ function generateCodeFromSpec(
       for (const variable of variables) {
         const optional = variable.required ? '' : '?';
         const tsType = toTypeScriptType(variable.type);
+        const nameParts = variable.name.split('.');
+        const propName = nameParts[nameParts.length - 1] ?? variable.name;
         lines.push(`  /** ${variable.description} */`);
-        lines.push(`  ${variable.name.split('.').pop()}${optional}: ${tsType};`);
+        lines.push(`  ${propName}${optional}: ${tsType};`);
       }
       lines.push('}');
       lines.push('');
@@ -64,7 +67,7 @@ function generateCodeFromSpec(
     // Generate event types
     if (spec.events.length > 0) {
       lines.push('// Event types');
-      lines.push(`export type EventName = ${spec.events.map(e => `'${e.name}'`).join(' | ')};`);
+      lines.push(`export type EventName = ${spec.events.map((e) => `'${e.name}'`).join(' | ')};`);
       lines.push('');
     }
   }
@@ -124,8 +127,8 @@ function generateCodeFromDataLayer(
     lines.push('');
 
     for (const [key, value] of Object.entries(dataLayer)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        lines.push(generateInterfaceFromObject(key, value as Record<string, unknown>));
+      if (isRecord(value)) {
+        lines.push(generateInterfaceFromObject(key, value));
         lines.push('');
       }
     }
@@ -155,17 +158,21 @@ function generateCodeFromDataLayer(
   };
 }
 
-function groupVariablesBySection(variables: TrackingVariable[]): Record<string, TrackingVariable[]> {
+function groupVariablesBySection(
+  variables: readonly TrackingVariable[]
+): Record<string, TrackingVariable[]> {
   const sections: Record<string, TrackingVariable[]> = {};
 
   for (const variable of variables) {
     const parts = variable.name.split('.');
-    const section = parts[0];
+    const section = parts[0] ?? 'default';
 
-    if (!sections[section]) {
-      sections[section] = [];
+    const existing = sections[section];
+    if (existing === undefined) {
+      sections[section] = [variable];
+    } else {
+      existing.push(variable);
     }
-    sections[section].push(variable);
   }
 
   return sections;
@@ -173,17 +180,24 @@ function groupVariablesBySection(variables: TrackingVariable[]): Record<string, 
 
 function toTypeScriptType(type: string): string {
   switch (type) {
-    case 'string': return 'string';
-    case 'number': return 'number';
-    case 'boolean': return 'boolean';
-    case 'array': return 'unknown[]';
-    case 'object': return 'Record<string, unknown>';
-    default: return 'unknown';
+    case 'string':
+      return 'string';
+    case 'number':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'array':
+      return 'unknown[]';
+    case 'object':
+      return 'Record<string, unknown>';
+    default:
+      return 'unknown';
   }
 }
 
 function capitalizeFirst(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  const first = str.charAt(0);
+  return first.toUpperCase() + str.slice(1);
 }
 
 function generateInterfaceFromObject(name: string, obj: Record<string, unknown>): string {
@@ -203,13 +217,17 @@ function inferTypeScriptType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) {
     if (value.length === 0) return 'unknown[]';
-    return `${inferTypeScriptType(value[0])}[]`;
+    const firstItem: unknown = value[0];
+    return `${inferTypeScriptType(firstItem)}[]`;
   }
   if (typeof value === 'object') return 'Record<string, unknown>';
   return typeof value;
 }
 
-function generateHelperFunctions(spec: TrackingSpec, language: 'typescript' | 'javascript'): string {
+function generateHelperFunctions(
+  spec: TrackingSpec,
+  language: 'typescript' | 'javascript'
+): string {
   const typeAnnotations = language === 'typescript';
   const lines: string[] = [];
 
@@ -283,8 +301,15 @@ function generateBasicHelpers(language: 'typescript' | 'javascript'): string {
   return lines.join('\n');
 }
 
+interface EventDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly trigger: string;
+  readonly variables: readonly TrackingVariable[];
+}
+
 function generateEventFunction(
-  event: { name: string; description: string; trigger: string; variables: TrackingVariable[] },
+  event: EventDefinition,
   language: 'typescript' | 'javascript'
 ): string {
   const lines: string[] = [];
@@ -292,8 +317,8 @@ function generateEventFunction(
   const typeAnnotations = language === 'typescript';
 
   // Build parameter interface for TypeScript
-  const requiredVars = event.variables.filter(v => v.required);
-  const optionalVars = event.variables.filter(v => !v.required);
+  const requiredVars = event.variables.filter((v) => v.required);
+  const optionalVars = event.variables.filter((v) => !v.required);
 
   lines.push(`/**`);
   lines.push(` * ${event.description}`);
@@ -303,10 +328,14 @@ function generateEventFunction(
   if (typeAnnotations && event.variables.length > 0) {
     lines.push(`export function ${funcName}(params: {`);
     for (const v of requiredVars) {
-      lines.push(`  ${v.name.split('.').pop()}: ${toTypeScriptType(v.type)};`);
+      const nameParts = v.name.split('.');
+      const propName = nameParts[nameParts.length - 1] ?? v.name;
+      lines.push(`  ${propName}: ${toTypeScriptType(v.type)};`);
     }
     for (const v of optionalVars) {
-      lines.push(`  ${v.name.split('.').pop()}?: ${toTypeScriptType(v.type)};`);
+      const nameParts = v.name.split('.');
+      const propName = nameParts[nameParts.length - 1] ?? v.name;
+      lines.push(`  ${propName}?: ${toTypeScriptType(v.type)};`);
     }
     lines.push('}): void {');
   } else if (event.variables.length > 0) {
@@ -324,5 +353,7 @@ function generateEventFunction(
 function toCamelCase(str: string): string {
   return str
     .toLowerCase()
-    .replace(/[-_\s]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''));
+    .replace(/[-_\s]+(.)?/g, (_, c: string | undefined) =>
+      c !== undefined ? c.toUpperCase() : ''
+    );
 }

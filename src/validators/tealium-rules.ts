@@ -1,9 +1,10 @@
 import type { ValidationError, ValidationWarning, TealiumDataLayer } from '../types/index.js';
+import { isRecord } from '../types/index.js';
 
 interface TealiumValidationResult {
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-  suggestions: string[];
+  readonly errors: ValidationError[];
+  readonly warnings: ValidationWarning[];
+  readonly suggestions: string[];
 }
 
 export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValidationResult {
@@ -14,7 +15,7 @@ export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValida
   // Check for common Tealium-specific issues
 
   // 1. Check page.pageName exists and is not empty
-  if (!dataLayer.page?.pageName) {
+  if (dataLayer.page?.pageName === undefined || dataLayer.page.pageName === '') {
     errors.push({
       path: 'page.pageName',
       message: 'page.pageName is required and must not be empty',
@@ -29,7 +30,7 @@ export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValida
   checkForStringifiedNulls(dataLayer, '', errors);
 
   // 4. Check currency format
-  if (dataLayer.page?.currency) {
+  if (dataLayer.page?.currency !== undefined) {
     if (!/^[A-Z]{3}$/.test(dataLayer.page.currency)) {
       warnings.push({
         path: 'page.currency',
@@ -40,7 +41,7 @@ export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValida
   }
 
   // 5. Check language format
-  if (dataLayer.page?.language) {
+  if (dataLayer.page?.language !== undefined) {
     if (!/^[a-z]{2}(-[A-Z]{2})?$/.test(dataLayer.page.language)) {
       warnings.push({
         path: 'page.language',
@@ -57,67 +58,59 @@ export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValida
   checkPriceValues(dataLayer, warnings);
 
   // 8. Hotel-specific validations
-  if (dataLayer.booking) {
+  if (dataLayer.booking !== undefined) {
     validateBookingData(dataLayer.booking, errors, warnings);
   }
 
-  if (dataLayer.hotel) {
-    validateHotelData(dataLayer.hotel, errors, warnings);
+  if (dataLayer.hotel !== undefined) {
+    validateHotelData(dataLayer.hotel, warnings);
   }
 
   // 9. Check date formats
   checkDateFormats(dataLayer, warnings);
 
   // Add suggestions based on what's missing
-  if (!dataLayer.user?.visitorId && !dataLayer.user?.userId) {
+  if (dataLayer.user?.visitorId === undefined && dataLayer.user?.userId === undefined) {
     suggestions.push('Consider adding user.visitorId for anonymous tracking');
   }
 
-  if (dataLayer.event && !dataLayer.event.eventCategory) {
+  if (dataLayer.event !== undefined && dataLayer.event.eventCategory === undefined) {
     suggestions.push('Adding eventCategory helps with event organization in reports');
   }
 
   return { errors, warnings, suggestions };
 }
 
-function checkForUndefinedValues(
-  obj: unknown,
-  path: string,
-  errors: ValidationError[]
-): void {
+function checkForUndefinedValues(obj: unknown, path: string, errors: ValidationError[]): void {
   if (obj === undefined) {
     errors.push({
-      path: path || '/',
+      path: path === '' ? '/' : path,
       message: 'Value is undefined - this may cause tracking issues',
       value: undefined,
     });
     return;
   }
 
-  if (obj && typeof obj === 'object') {
+  if (isRecord(obj)) {
     for (const [key, value] of Object.entries(obj)) {
-      const currentPath = path ? `${path}.${key}` : key;
+      const currentPath = path !== '' ? `${path}.${key}` : key;
       if (value === undefined) {
         errors.push({
           path: currentPath,
           message: 'Value is undefined - remove or set to null',
           value: undefined,
         });
-      } else if (typeof value === 'object' && value !== null) {
+      } else if (isRecord(value)) {
         checkForUndefinedValues(value, currentPath, errors);
       }
     }
   }
 }
 
-function checkForStringifiedNulls(
-  obj: unknown,
-  path: string,
-  errors: ValidationError[]
-): void {
-  if (obj && typeof obj === 'object') {
+function checkForStringifiedNulls(obj: unknown, path: string, errors: ValidationError[]): void {
+  if (isRecord(obj)) {
     for (const [key, value] of Object.entries(obj)) {
-      const currentPath = path ? `${path}.${key}` : key;
+      const currentPath = path !== '' ? `${path}.${key}` : key;
       if (typeof value === 'string') {
         const lower = value.toLowerCase();
         if (lower === 'undefined' || lower === 'null' || lower === 'nan') {
@@ -128,27 +121,23 @@ function checkForStringifiedNulls(
             expected: 'Use actual null or remove the property',
           });
         }
-      } else if (typeof value === 'object' && value !== null) {
+      } else if (isRecord(value)) {
         checkForStringifiedNulls(value, currentPath, errors);
       }
     }
   }
 }
 
-function checkForPII(
-  obj: unknown,
-  path: string,
-  warnings: ValidationWarning[]
-): void {
+function checkForPII(obj: unknown, path: string, warnings: ValidationWarning[]): void {
   const piiPatterns = [
     { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, name: 'email address' },
     { pattern: /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/, name: 'phone number' },
     { pattern: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/, name: 'credit card number' },
   ];
 
-  if (obj && typeof obj === 'object') {
+  if (isRecord(obj)) {
     for (const [key, value] of Object.entries(obj)) {
-      const currentPath = path ? `${path}.${key}` : key;
+      const currentPath = path !== '' ? `${path}.${key}` : key;
 
       // Skip known safe fields
       if (['userId', 'visitorId', 'bookingId', 'transactionId'].includes(key)) {
@@ -165,18 +154,15 @@ function checkForPII(
             });
           }
         }
-      } else if (typeof value === 'object' && value !== null) {
+      } else if (isRecord(value)) {
         checkForPII(value, currentPath, warnings);
       }
     }
   }
 }
 
-function checkPriceValues(
-  dataLayer: TealiumDataLayer,
-  warnings: ValidationWarning[]
-): void {
-  const priceFields = [
+function checkPriceValues(dataLayer: TealiumDataLayer, warnings: ValidationWarning[]): void {
+  const priceFields: readonly { readonly path: string; readonly value: unknown }[] = [
     { path: 'product.productPrice', value: dataLayer.product?.productPrice },
     { path: 'transaction.transactionTotal', value: dataLayer.transaction?.transactionTotal },
     { path: 'booking.bookingTotal', value: dataLayer.booking?.bookingTotal },
@@ -186,10 +172,12 @@ function checkPriceValues(
 
   for (const { path, value } of priceFields) {
     if (value !== undefined && typeof value === 'string') {
+      const parsed = parseFloat(value);
+      const numValue = Number.isNaN(parsed) ? 0 : parsed;
       warnings.push({
         path,
         message: 'Price value is a string, should be a number',
-        suggestion: `Convert "${value}" to number: ${parseFloat(value) || 0}`,
+        suggestion: `Convert "${value}" to number: ${String(numValue)}`,
       });
     }
   }
@@ -200,39 +188,35 @@ function validateBookingData(
   errors: ValidationError[],
   warnings: ValidationWarning[]
 ): void {
-  // Check date logic
-  if (booking.bookingCheckIn && booking.bookingCheckOut) {
-    const checkIn = new Date(booking.bookingCheckIn);
-    const checkOut = new Date(booking.bookingCheckOut);
+  // Check date logic - these fields are required in BookingData
+  const checkIn = new Date(booking.bookingCheckIn);
+  const checkOut = new Date(booking.bookingCheckOut);
 
-    if (checkOut <= checkIn) {
-      errors.push({
-        path: 'booking.bookingCheckOut',
-        message: 'Check-out date must be after check-in date',
-        value: booking.bookingCheckOut,
-      });
-    }
-
-    // Verify nights calculation
-    if (booking.bookingNights) {
-      const expectedNights = Math.ceil(
-        (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      if (booking.bookingNights !== expectedNights) {
-        warnings.push({
-          path: 'booking.bookingNights',
-          message: `bookingNights (${booking.bookingNights}) doesn't match date range (${expectedNights} nights)`,
-          suggestion: `Set bookingNights to ${expectedNights}`,
-        });
-      }
-    }
+  if (checkOut <= checkIn) {
+    errors.push({
+      path: 'booking.bookingCheckOut',
+      message: 'Check-out date must be after check-in date',
+      value: booking.bookingCheckOut,
+    });
   }
 
-  // Check currency is set when total is present
-  if (booking.bookingTotal && !booking.bookingCurrency) {
+  // Verify nights calculation
+  const expectedNights = Math.ceil(
+    (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  if (booking.bookingNights !== expectedNights) {
+    warnings.push({
+      path: 'booking.bookingNights',
+      message: `bookingNights (${String(booking.bookingNights)}) doesn't match date range (${String(expectedNights)} nights)`,
+      suggestion: `Set bookingNights to ${String(expectedNights)}`,
+    });
+  }
+
+  // Check currency is not empty
+  if (booking.bookingCurrency === '') {
     errors.push({
       path: 'booking.bookingCurrency',
-      message: 'bookingCurrency is required when bookingTotal is set',
+      message: 'bookingCurrency must not be empty',
       expected: '3-letter currency code (e.g., EUR, USD)',
     });
   }
@@ -240,7 +224,6 @@ function validateBookingData(
 
 function validateHotelData(
   hotel: NonNullable<TealiumDataLayer['hotel']>,
-  errors: ValidationError[],
   warnings: ValidationWarning[]
 ): void {
   // Star rating should be 1-5
@@ -248,18 +231,15 @@ function validateHotelData(
     if (hotel.hotelStarRating < 1 || hotel.hotelStarRating > 5) {
       warnings.push({
         path: 'hotel.hotelStarRating',
-        message: `Star rating ${hotel.hotelStarRating} is outside normal range (1-5)`,
+        message: `Star rating ${String(hotel.hotelStarRating)} is outside normal range (1-5)`,
         suggestion: 'Use a value between 1 and 5',
       });
     }
   }
 }
 
-function checkDateFormats(
-  dataLayer: TealiumDataLayer,
-  warnings: ValidationWarning[]
-): void {
-  const dateFields = [
+function checkDateFormats(dataLayer: TealiumDataLayer, warnings: ValidationWarning[]): void {
+  const dateFields: readonly { readonly path: string; readonly value: unknown }[] = [
     { path: 'search.searchCheckIn', value: dataLayer.search?.searchCheckIn },
     { path: 'search.searchCheckOut', value: dataLayer.search?.searchCheckOut },
     { path: 'booking.bookingCheckIn', value: dataLayer.booking?.bookingCheckIn },
@@ -269,7 +249,7 @@ function checkDateFormats(
   const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
   for (const { path, value } of dateFields) {
-    if (value && typeof value === 'string' && !isoDatePattern.test(value)) {
+    if (value !== undefined && typeof value === 'string' && !isoDatePattern.test(value)) {
       warnings.push({
         path,
         message: `Date "${value}" is not in ISO format`,

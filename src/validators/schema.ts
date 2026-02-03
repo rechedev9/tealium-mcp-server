@@ -1,5 +1,5 @@
 import Ajv from 'ajv';
-import type { ErrorObject } from 'ajv';
+import type { ErrorObject, ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
 import { standardSchema, ecommerceSchema, hotelSchema } from '../resources/schemas.js';
 import type { ValidationResult, ValidationError, ValidationWarning } from '../types/index.js';
@@ -14,16 +14,16 @@ ajv.addSchema(hotelSchema);
 
 export function validateAgainstSchema(
   dataLayer: unknown,
-  schemaUri: string = 'tealium://schema/standard'
+  schemaUri = 'tealium://schema/standard'
 ): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
   const suggestions: string[] = [];
 
   // Get the validator
-  const validate = ajv.getSchema(schemaUri);
+  const validate: ValidateFunction | undefined = ajv.getSchema(schemaUri);
 
-  if (!validate) {
+  if (validate === undefined) {
     return {
       isValid: false,
       errors: [{ path: '', message: `Schema not found: ${schemaUri}`, value: schemaUri }],
@@ -36,24 +36,41 @@ export function validateAgainstSchema(
   // Run validation
   const valid = validate(dataLayer);
 
-  if (!valid && validate.errors) {
+  if (!valid && validate.errors !== undefined && validate.errors !== null) {
     for (const error of validate.errors) {
-      errors.push({
-        path: error.instancePath || '/',
+      const validationError: ValidationError = {
+        path: error.instancePath === '' ? '/' : error.instancePath,
         message: formatAjvError(error),
         value: error.data,
-        expected: error.schema?.toString(),
-      });
+      };
+      if (error.schema !== undefined) {
+        let schemaValue: string;
+        if (error.schema === null) {
+          schemaValue = 'null';
+        } else if (typeof error.schema === 'object') {
+          schemaValue = JSON.stringify(error.schema);
+        } else if (
+          typeof error.schema === 'string' ||
+          typeof error.schema === 'number' ||
+          typeof error.schema === 'boolean'
+        ) {
+          schemaValue = String(error.schema);
+        } else {
+          schemaValue = 'unknown';
+        }
+        (validationError as { expected?: string }).expected = schemaValue;
+      }
+      errors.push(validationError);
     }
   }
 
   // Generate summary
   const summary = valid
     ? 'Data layer is valid'
-    : `Found ${errors.length} error(s) in data layer`;
+    : `Found ${String(errors.length)} error(s) in data layer`;
 
   return {
-    isValid: Boolean(valid),
+    isValid: valid,
     errors,
     warnings,
     suggestions,
@@ -63,21 +80,36 @@ export function validateAgainstSchema(
 
 function formatAjvError(error: ErrorObject): string {
   switch (error.keyword) {
-    case 'required':
-      return `Missing required property: ${error.params.missingProperty}`;
-    case 'type':
-      return `Expected ${error.params.type}, got ${typeof error.data}`;
-    case 'enum':
-      return `Value must be one of: ${error.params.allowedValues?.join(', ')}`;
-    case 'minLength':
-      return `String is too short (minimum ${error.params.limit} characters)`;
-    case 'pattern':
-      return `Value does not match pattern: ${error.params.pattern}`;
-    case 'minimum':
-      return `Value must be >= ${error.params.limit}`;
-    case 'maximum':
-      return `Value must be <= ${error.params.limit}`;
+    case 'required': {
+      const params = error.params as { missingProperty?: string };
+      return `Missing required property: ${params.missingProperty ?? 'unknown'}`;
+    }
+    case 'type': {
+      const params = error.params as { type?: string };
+      return `Expected ${params.type ?? 'unknown'}, got ${typeof error.data}`;
+    }
+    case 'enum': {
+      const params = error.params as { allowedValues?: unknown[] };
+      const values = params.allowedValues;
+      return `Value must be one of: ${values !== undefined ? values.join(', ') : 'unknown'}`;
+    }
+    case 'minLength': {
+      const params = error.params as { limit?: number };
+      return `String is too short (minimum ${String(params.limit ?? 0)} characters)`;
+    }
+    case 'pattern': {
+      const params = error.params as { pattern?: string };
+      return `Value does not match pattern: ${params.pattern ?? 'unknown'}`;
+    }
+    case 'minimum': {
+      const params = error.params as { limit?: number };
+      return `Value must be >= ${String(params.limit ?? 0)}`;
+    }
+    case 'maximum': {
+      const params = error.params as { limit?: number };
+      return `Value must be <= ${String(params.limit ?? 0)}`;
+    }
     default:
-      return error.message || 'Validation error';
+      return error.message ?? 'Validation error';
   }
 }

@@ -1,35 +1,36 @@
-import type { TealiumDataLayer, TrackingSpec, TrackingVariable, TrackingEvent } from '../types/index.js';
+import type { TealiumDataLayer, TrackingSpec } from '../types/index.js';
+import { isRecord, isTealiumDataLayer, isTrackingSpec } from '../types/index.js';
 
 export interface GenerateDocumentationArgs {
-  dataLayer?: TealiumDataLayer;
-  spec?: TrackingSpec;
-  format?: 'markdown' | 'json-schema';
+  readonly dataLayer?: unknown;
+  readonly spec?: unknown;
+  readonly format?: 'markdown' | 'json-schema';
 }
 
 export function generateDocumentation(args: GenerateDocumentationArgs): string {
   const { dataLayer, spec, format = 'markdown' } = args;
 
-  if (spec) {
+  if (spec !== undefined && isTrackingSpec(spec)) {
     return format === 'markdown'
       ? generateMarkdownFromSpec(spec)
       : generateJsonSchemaFromSpec(spec);
   }
 
-  if (dataLayer) {
+  if (dataLayer !== undefined && isTealiumDataLayer(dataLayer)) {
     return format === 'markdown'
       ? generateMarkdownFromDataLayer(dataLayer)
       : generateJsonSchemaFromDataLayer(dataLayer);
   }
 
-  return 'No data layer or specification provided';
+  return 'No valid data layer or specification provided';
 }
 
 function generateMarkdownFromSpec(spec: TrackingSpec): string {
   const lines: string[] = [];
 
   lines.push(`# ${spec.name}`);
-  if (spec.version) lines.push(`**Version:** ${spec.version}`);
-  if (spec.description) lines.push(`\n${spec.description}`);
+  if (spec.version !== undefined) lines.push(`**Version:** ${spec.version}`);
+  if (spec.description !== undefined) lines.push(`\n${spec.description}`);
   lines.push('');
 
   // Variables section
@@ -41,7 +42,9 @@ function generateMarkdownFromSpec(spec: TrackingSpec): string {
 
     for (const variable of spec.variables) {
       const required = variable.required ? '✅' : '❌';
-      lines.push(`| \`${variable.name}\` | ${variable.type} | ${required} | ${variable.description} |`);
+      lines.push(
+        `| \`${variable.name}\` | ${variable.type} | ${required} | ${variable.description} |`
+      );
     }
     lines.push('');
 
@@ -57,10 +60,12 @@ function generateMarkdownFromSpec(spec: TrackingSpec): string {
       if (variable.example !== undefined) {
         lines.push(`- **Example:** \`${JSON.stringify(variable.example)}\``);
       }
-      if (variable.allowedValues) {
-        lines.push(`- **Allowed values:** ${variable.allowedValues.map(v => `\`${v}\``).join(', ')}`);
+      if (variable.allowedValues !== undefined) {
+        lines.push(
+          `- **Allowed values:** ${variable.allowedValues.map((v) => `\`${String(v)}\``).join(', ')}`
+        );
       }
-      if (variable.format) {
+      if (variable.format !== undefined) {
         lines.push(`- **Format:** ${variable.format}`);
       }
       lines.push('');
@@ -86,7 +91,9 @@ function generateMarkdownFromSpec(spec: TrackingSpec): string {
 
         for (const variable of event.variables) {
           const required = variable.required ? '✅' : '❌';
-          lines.push(`| \`${variable.name}\` | ${variable.type} | ${required} | ${variable.description} |`);
+          lines.push(
+            `| \`${variable.name}\` | ${variable.type} | ${required} | ${variable.description} |`
+          );
         }
         lines.push('');
       }
@@ -106,7 +113,7 @@ function generateMarkdownFromDataLayer(dataLayer: TealiumDataLayer): string {
 
   // Analyze structure
   for (const [section, value] of Object.entries(dataLayer)) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (isRecord(value)) {
       lines.push(`## ${capitalizeFirst(section)} Data`);
       lines.push('');
       lines.push('| Variable | Type | Current Value |');
@@ -137,33 +144,46 @@ function generateJsonSchemaFromSpec(spec: TrackingSpec): string {
     title: spec.name,
     description: spec.description,
     type: 'object',
-    properties: {},
+    properties: {} as Record<string, unknown>,
     required: [] as string[],
   };
 
+  const properties = schema.properties as Record<string, unknown>;
+  const required = schema.required as string[];
+
   for (const variable of spec.variables) {
     const parts = variable.name.split('.');
-    let current = schema.properties as Record<string, unknown>;
+    let current = properties;
 
     for (let i = 0; i < parts.length - 1; i++) {
-      if (!current[parts[i]]) {
-        current[parts[i]] = { type: 'object', properties: {} };
+      const part = parts[i];
+      if (part === undefined) continue;
+
+      if (current[part] === undefined) {
+        current[part] = { type: 'object', properties: {} };
       }
-      current = (current[parts[i]] as { properties: Record<string, unknown> }).properties;
+      const currentObj = current[part];
+      if (isRecord(currentObj) && isRecord(currentObj.properties)) {
+        current = currentObj.properties;
+      }
     }
 
     const lastPart = parts[parts.length - 1];
-    current[lastPart] = {
+    if (lastPart === undefined) continue;
+
+    const propDef: Record<string, unknown> = {
       type: variable.type,
       description: variable.description,
     };
 
-    if (variable.allowedValues) {
-      (current[lastPart] as Record<string, unknown>).enum = variable.allowedValues;
+    if (variable.allowedValues !== undefined) {
+      propDef.enum = variable.allowedValues;
     }
 
+    current[lastPart] = propDef;
+
     if (variable.required && parts.length === 1) {
-      (schema.required as string[]).push(variable.name);
+      required.push(variable.name);
     }
   }
 
@@ -181,13 +201,14 @@ function inferSchemaFromObject(obj: unknown, title: string): Record<string, unkn
   }
 
   if (Array.isArray(obj)) {
+    const firstItem: unknown = obj[0];
     return {
       type: 'array',
-      items: obj.length > 0 ? inferSchemaFromObject(obj[0], 'item') : {},
+      items: obj.length > 0 ? inferSchemaFromObject(firstItem, 'item') : {},
     };
   }
 
-  if (typeof obj === 'object') {
+  if (isRecord(obj)) {
     const properties: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       properties[key] = inferSchemaFromObject(value, key);
@@ -203,7 +224,8 @@ function inferSchemaFromObject(obj: unknown, title: string): Record<string, unkn
 }
 
 function capitalizeFirst(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  const first = str.charAt(0);
+  return first.toUpperCase() + str.slice(1);
 }
 
 function getTypeString(value: unknown): string {
@@ -214,7 +236,11 @@ function getTypeString(value: unknown): string {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '*empty*';
-  if (typeof value === 'string') return value.length > 30 ? `"${value.slice(0, 30)}..."` : `"${value}"`;
+  if (typeof value === 'string')
+    return value.length > 30 ? `"${value.slice(0, 30)}..."` : `"${value}"`;
   if (typeof value === 'object') return '*object*';
-  return String(value);
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '*unknown*';
 }

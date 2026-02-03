@@ -1,205 +1,241 @@
 // Data Layer Types
 
 export interface PageData {
-  pageName: string;
-  pageType?: string;
-  pageCategory?: string;
-  pageSubcategory?: string;
-  language?: string;
-  country?: string;
-  currency?: string;
+  readonly pageName: string;
+  readonly pageType?: string;
+  readonly pageCategory?: string;
+  readonly pageSubcategory?: string;
+  readonly language?: string;
+  readonly country?: string;
+  readonly currency?: string;
 }
 
 export interface UserData {
-  userId?: string;
-  visitorId?: string;
-  userType?: string;
-  isLoggedIn?: boolean;
-  loyaltyTier?: string;
-  loyaltyPoints?: number;
+  readonly userId?: string;
+  readonly visitorId?: string;
+  readonly userType?: string;
+  readonly isLoggedIn?: boolean;
+  readonly loyaltyTier?: string;
+  readonly loyaltyPoints?: number;
 }
 
 export interface EventData {
-  eventName: string;
-  eventCategory?: string;
-  eventAction?: string;
-  eventLabel?: string;
-  eventValue?: number;
+  readonly eventName: string;
+  readonly eventCategory?: string;
+  readonly eventAction?: string;
+  readonly eventLabel?: string;
+  readonly eventValue?: number;
 }
 
 // E-commerce Types
 
 export interface ProductData {
-  productId: string;
-  productName: string;
-  productCategory?: string;
-  productBrand?: string;
-  productPrice?: number;
-  productQuantity?: number;
-  productVariant?: string;
-  productSku?: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly productCategory?: string;
+  readonly productBrand?: string;
+  readonly productPrice?: number;
+  readonly productQuantity?: number;
+  readonly productVariant?: string;
+  readonly productSku?: string;
 }
 
 export interface TransactionData {
-  transactionId: string;
-  transactionTotal: number;
-  transactionTax?: number;
-  transactionShipping?: number;
-  transactionCurrency?: string;
-  transactionPaymentMethod?: string;
-  products?: ProductData[];
+  readonly transactionId: string;
+  readonly transactionTotal: number;
+  readonly transactionTax?: number;
+  readonly transactionShipping?: number;
+  readonly transactionCurrency?: string;
+  readonly transactionPaymentMethod?: string;
+  readonly products?: readonly ProductData[];
 }
 
 // Hotel Industry Types
 
 export interface HotelSearchData {
-  searchDestination?: string;
-  searchCheckIn?: string;
-  searchCheckOut?: string;
-  searchAdults?: number;
-  searchChildren?: number;
-  searchRooms?: number;
-  searchFlexibleDates?: boolean;
+  readonly searchDestination?: string;
+  readonly searchCheckIn?: string;
+  readonly searchCheckOut?: string;
+  readonly searchAdults?: number;
+  readonly searchChildren?: number;
+  readonly searchRooms?: number;
+  readonly searchFlexibleDates?: boolean;
 }
 
 export interface HotelData {
-  hotelCode: string;
-  hotelName: string;
-  hotelBrand?: string;
-  hotelCity?: string;
-  hotelCountry?: string;
-  hotelStarRating?: number;
-  hotelCategory?: string;
+  readonly hotelCode: string;
+  readonly hotelName: string;
+  readonly hotelBrand?: string;
+  readonly hotelCity?: string;
+  readonly hotelCountry?: string;
+  readonly hotelStarRating?: number;
+  readonly hotelCategory?: string;
 }
 
 export interface RoomData {
-  roomType: string;
-  roomCode?: string;
-  roomName?: string;
-  roomCapacity?: number;
-  roomAmenities?: string[];
+  readonly roomType: string;
+  readonly roomCode?: string;
+  readonly roomName?: string;
+  readonly roomCapacity?: number;
+  readonly roomAmenities?: readonly string[];
 }
 
 export interface BookingData {
-  bookingId?: string;
-  bookingStatus?: string;
-  bookingCheckIn: string;
-  bookingCheckOut: string;
-  bookingNights: number;
-  bookingAdults: number;
-  bookingChildren?: number;
-  bookingRooms: number;
-  bookingRateCode?: string;
-  bookingRateName?: string;
-  bookingTotal: number;
-  bookingCurrency: string;
-  bookingTaxes?: number;
-  bookingFees?: number;
-  hotel?: HotelData;
-  room?: RoomData;
+  readonly bookingId?: string;
+  readonly bookingStatus?: string;
+  readonly bookingCheckIn: string;
+  readonly bookingCheckOut: string;
+  readonly bookingNights: number;
+  readonly bookingAdults: number;
+  readonly bookingChildren?: number;
+  readonly bookingRooms: number;
+  readonly bookingRateCode?: string;
+  readonly bookingRateName?: string;
+  readonly bookingTotal: number;
+  readonly bookingCurrency: string;
+  readonly bookingTaxes?: number;
+  readonly bookingFees?: number;
+  readonly hotel?: HotelData;
+  readonly room?: RoomData;
 }
 
 export interface GuestData {
-  guestType?: 'new' | 'returning' | 'loyalty';
-  guestLoyaltyId?: string;
-  guestLoyaltyTier?: string;
-  guestLoyaltyPoints?: number;
-  guestPreferences?: string[];
+  readonly guestType?: 'new' | 'returning' | 'loyalty';
+  readonly guestLoyaltyId?: string;
+  readonly guestLoyaltyTier?: string;
+  readonly guestLoyaltyPoints?: number;
+  readonly guestPreferences?: readonly string[];
 }
 
 // Main Data Layer Interface
 
 export interface TealiumDataLayer {
-  page?: PageData;
-  user?: UserData;
-  event?: EventData;
-  product?: ProductData;
-  products?: ProductData[];
-  transaction?: TransactionData;
-  search?: HotelSearchData;
-  hotel?: HotelData;
-  room?: RoomData;
-  booking?: BookingData;
-  guest?: GuestData;
-  [key: string]: unknown;
+  readonly page?: PageData;
+  readonly user?: UserData;
+  readonly event?: EventData;
+  readonly product?: ProductData;
+  readonly products?: readonly ProductData[];
+  readonly transaction?: TransactionData;
+  readonly search?: HotelSearchData;
+  readonly hotel?: HotelData;
+  readonly room?: RoomData;
+  readonly booking?: BookingData;
+  readonly guest?: GuestData;
+  readonly [key: string]: unknown;
 }
 
 // Validation Types
 
 export interface ValidationResult {
-  isValid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-  suggestions: string[];
-  summary: string;
+  readonly isValid: boolean;
+  readonly errors: readonly ValidationError[];
+  readonly warnings: readonly ValidationWarning[];
+  readonly suggestions: readonly string[];
+  readonly summary: string;
 }
 
 export interface ValidationError {
-  path: string;
-  message: string;
-  value?: unknown;
-  expected?: string;
+  readonly path: string;
+  readonly message: string;
+  readonly value?: unknown;
+  readonly expected?: string;
 }
 
 export interface ValidationWarning {
-  path: string;
-  message: string;
-  suggestion?: string;
+  readonly path: string;
+  readonly message: string;
+  readonly suggestion?: string;
 }
 
 // Tracking Spec Types
 
 export interface TrackingVariable {
-  name: string;
-  description: string;
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  required: boolean;
-  example?: string | number | boolean;
-  allowedValues?: (string | number)[];
-  format?: string;
+  readonly name: string;
+  readonly description: string;
+  readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  readonly required: boolean;
+  readonly example?: string | number | boolean;
+  readonly allowedValues?: readonly (string | number)[];
+  readonly format?: string;
 }
 
 export interface TrackingEvent {
-  name: string;
-  description: string;
-  trigger: string;
-  variables: TrackingVariable[];
+  readonly name: string;
+  readonly description: string;
+  readonly trigger: string;
+  readonly variables: readonly TrackingVariable[];
 }
 
 export interface TrackingSpec {
-  name: string;
-  version?: string;
-  description?: string;
-  variables: TrackingVariable[];
-  events: TrackingEvent[];
+  readonly name: string;
+  readonly version?: string;
+  readonly description?: string;
+  readonly variables: readonly TrackingVariable[];
+  readonly events: readonly TrackingEvent[];
 }
 
 // Debug Types
 
 export interface DebugIssue {
-  severity: 'error' | 'warning' | 'info';
-  path: string;
-  issue: string;
-  recommendation: string;
+  readonly severity: 'error' | 'warning' | 'info';
+  readonly path: string;
+  readonly issue: string;
+  readonly recommendation: string;
 }
 
 export interface DebugResult {
-  dataLayerSnapshot: TealiumDataLayer;
-  issues: DebugIssue[];
-  missingVariables: string[];
-  typeMismatches: Array<{
-    path: string;
-    expected: string;
-    actual: string;
-  }>;
-  recommendations: string[];
+  readonly dataLayerSnapshot: TealiumDataLayer;
+  readonly issues: readonly DebugIssue[];
+  readonly missingVariables: readonly string[];
+  readonly typeMismatches: readonly TypeMismatch[];
+  readonly recommendations: readonly string[];
+}
+
+export interface TypeMismatch {
+  readonly path: string;
+  readonly expected: string;
+  readonly actual: string;
 }
 
 // Code Generation Types
 
 export interface GeneratedCode {
-  code: string;
-  language: 'typescript' | 'javascript';
-  imports?: string[];
-  filename?: string;
+  readonly code: string;
+  readonly language: 'typescript' | 'javascript';
+  readonly imports?: readonly string[];
+  readonly filename?: string;
 }
+
+// Re-export from other type files
+export type { Result } from './result.js';
+export { success, failure, unwrap, unwrapOr, mapResult, mapError } from './result.js';
+export {
+  TealiumError,
+  ValidationError as ValidationErrorClass,
+  ParseError,
+  SchemaError,
+  ToolArgumentError,
+} from './errors.js';
+export {
+  isRecord,
+  isString,
+  isNumber,
+  isBoolean,
+  isArray,
+  isStringArray,
+  isTealiumDataLayer,
+  isTrackingSpec,
+  isTrackingVariable,
+  isTrackingEvent,
+  isPageData,
+  isUserData,
+  isEventData,
+  isProductData,
+  isProductDataArray,
+  isTransactionData,
+  isHotelSearchData,
+  isHotelData,
+  isRoomData,
+  isBookingData,
+  isGuestData,
+} from './guards.js';

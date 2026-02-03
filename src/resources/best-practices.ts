@@ -251,10 +251,10 @@ export const templates: Record<string, string> = {
 };
 
 export function getTemplate(uri: string): string | null {
-  return templates[uri] || null;
+  return templates[uri] ?? null;
 }
 
-export function listTemplates(): Array<{ uri: string; name: string; description: string }> {
+export function listTemplates(): { uri: string; name: string; description: string }[] {
   return [
     {
       uri: 'tealium://templates/basic',

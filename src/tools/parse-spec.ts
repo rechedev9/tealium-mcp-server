@@ -1,12 +1,24 @@
-import type { TrackingSpec, TrackingVariable, TrackingEvent } from '../types/index.js';
+import type { TrackingSpec, TrackingVariable, TrackingEvent, Result } from '../types/index.js';
+import { success, failure, isRecord, isString } from '../types/index.js';
+import { ParseError } from '../types/errors.js';
 
 export interface ParseTrackingSpecArgs {
-  content: string;
-  format?: 'csv' | 'json' | 'auto';
-  hasHeader?: boolean;
+  readonly content: string;
+  readonly format?: 'csv' | 'json' | 'auto';
+  readonly hasHeader?: boolean;
 }
 
 export function parseTrackingSpec(args: ParseTrackingSpecArgs): TrackingSpec {
+  const result = parseTrackingSpecSafe(args);
+  if (result.success) {
+    return result.data;
+  }
+  throw result.error;
+}
+
+export function parseTrackingSpecSafe(
+  args: ParseTrackingSpecArgs
+): Result<TrackingSpec, ParseError> {
   const { content, format = 'auto', hasHeader = true } = args;
 
   // Detect format if auto
@@ -30,50 +42,63 @@ function detectFormat(content: string): 'csv' | 'json' {
   return 'csv';
 }
 
-function parseJsonSpec(content: string): TrackingSpec {
+function parseJsonSpec(content: string): Result<TrackingSpec, ParseError> {
   try {
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
 
     // If it's already in TrackingSpec format
-    if (parsed.name && (parsed.variables || parsed.events)) {
-      return normalizeSpec(parsed);
+    if (
+      isRecord(parsed) &&
+      isString(parsed.name) &&
+      (parsed.variables !== undefined || parsed.events !== undefined)
+    ) {
+      return success(normalizeSpec(parsed));
     }
 
     // If it's an array of variables
     if (Array.isArray(parsed)) {
-      return {
+      return success({
         name: 'Imported Specification',
-        variables: parsed.map(normalizeVariable),
+        variables: parsed.map((item: unknown) => normalizeVariable(isRecord(item) ? item : {})),
         events: [],
-      };
+      });
     }
 
     // If it's a flat object (data layer example)
-    return inferSpecFromDataLayer(parsed);
+    if (isRecord(parsed)) {
+      return success(inferSpecFromDataLayer(parsed));
+    }
+
+    return failure(new ParseError('Invalid JSON structure', 'json'));
   } catch (error) {
-    throw new Error(`Failed to parse JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return failure(new ParseError(`Failed to parse JSON: ${message}`, 'json'));
   }
 }
 
-function parseCsvSpec(content: string, hasHeader: boolean): TrackingSpec {
-  const lines = content.split('\n').filter(line => line.trim());
+function parseCsvSpec(content: string, hasHeader: boolean): Result<TrackingSpec, ParseError> {
+  const lines = content.split('\n').filter((line) => line.trim() !== '');
 
   if (lines.length === 0) {
-    throw new Error('CSV content is empty');
+    return failure(new ParseError('CSV content is empty', 'csv'));
   }
 
   const variables: TrackingVariable[] = [];
   const events: TrackingEvent[] = [];
 
   // Parse header to determine column mapping
-  let headerMap: Record<string, number> = {};
+  const headerMap: Record<string, number> = {};
 
   if (hasHeader) {
     const headerLine = lines[0];
+    if (headerLine === undefined) {
+      return failure(new ParseError('CSV header line is missing', 'csv'));
+    }
+
     const headers = parseCSVLine(headerLine);
 
     // Map common header names to our format
-    const headerMappings: Record<string, string[]> = {
+    const headerMappings: Record<string, readonly string[]> = {
       name: ['name', 'variable', 'variable_name', 'variablename', 'field', 'property'],
       description: ['description', 'desc', 'definition', 'notes', 'comment'],
       type: ['type', 'datatype', 'data_type', 'format'],
@@ -84,10 +109,12 @@ function parseCsvSpec(content: string, hasHeader: boolean): TrackingSpec {
     };
 
     for (let i = 0; i < headers.length; i++) {
-      const header = headers[i].toLowerCase().trim();
+      const header = headers[i];
+      if (header === undefined) continue;
+      const normalizedHeader = header.toLowerCase().trim();
 
       for (const [key, aliases] of Object.entries(headerMappings)) {
-        if (aliases.includes(header)) {
+        if (aliases.includes(normalizedHeader)) {
           headerMap[key] = i;
           break;
         }
@@ -96,27 +123,42 @@ function parseCsvSpec(content: string, hasHeader: boolean): TrackingSpec {
 
     // Process data lines
     for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i]);
+      const line = lines[i];
+      if (line === undefined) continue;
 
+      const values = parseCSVLine(line);
       const variable = extractVariable(values, headerMap);
-      if (variable) {
+
+      if (variable !== null) {
         variables.push(variable);
 
         // Check if this line also defines an event
-        if (headerMap.event !== undefined) {
-          const eventName = values[headerMap.event]?.trim();
-          if (eventName) {
-            let existingEvent = events.find(e => e.name === eventName);
-            if (!existingEvent) {
-              existingEvent = {
+        const eventIndex = headerMap.event;
+        if (eventIndex !== undefined) {
+          const eventName = values[eventIndex]?.trim();
+          if (eventName !== undefined && eventName !== '') {
+            let existingEvent = events.find((e) => e.name === eventName);
+            if (existingEvent === undefined) {
+              const newEvent: TrackingEvent = {
                 name: eventName,
                 description: `Event: ${eventName}`,
                 trigger: 'User action',
                 variables: [],
               };
-              events.push(existingEvent);
+              events.push(newEvent);
+              existingEvent = newEvent;
             }
-            existingEvent.variables.push(variable);
+            // Find the event index and update it with the new variable
+            const eventIndex = events.findIndex((e) => e.name === eventName);
+            if (eventIndex !== -1) {
+              const oldEvent = events[eventIndex];
+              if (oldEvent !== undefined) {
+                events[eventIndex] = {
+                  ...oldEvent,
+                  variables: [...oldEvent.variables, variable],
+                };
+              }
+            }
           }
         }
       }
@@ -127,21 +169,26 @@ function parseCsvSpec(content: string, hasHeader: boolean): TrackingSpec {
       const values = parseCSVLine(line);
 
       if (values.length >= 2) {
+        const name = values[0]?.trim() ?? '';
+        const typeStr = values[1]?.trim() ?? 'string';
+        const requiredStr = values[2]?.toLowerCase().trim() ?? '';
+        const description = values[3]?.trim() ?? '';
+
         variables.push({
-          name: values[0]?.trim() || '',
-          type: normalizeType(values[1]?.trim() || 'string'),
-          required: values[2]?.toLowerCase().trim() === 'true' || values[2]?.toLowerCase().trim() === 'yes',
-          description: values[3]?.trim() || '',
+          name,
+          type: normalizeType(typeStr),
+          required: requiredStr === 'true' || requiredStr === 'yes',
+          description,
         });
       }
     }
   }
 
-  return {
+  return success({
     name: 'Imported Tracking Specification',
     variables,
     events,
-  };
+  });
 }
 
 function parseCSVLine(line: string): string[] {
@@ -151,9 +198,11 @@ function parseCSVLine(line: string): string[] {
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
+    if (char === undefined) continue;
 
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+      const nextChar = line[i + 1];
+      if (inQuotes && nextChar === '"') {
         current += '"';
         i++;
       } else {
@@ -172,42 +221,54 @@ function parseCSVLine(line: string): string[] {
 }
 
 function extractVariable(
-  values: string[],
+  values: readonly string[],
   headerMap: Record<string, number>
 ): TrackingVariable | null {
-  const name = headerMap.name !== undefined ? values[headerMap.name]?.trim() : values[0]?.trim();
+  const nameIndex = headerMap.name;
+  const name = nameIndex !== undefined ? values[nameIndex]?.trim() : values[0]?.trim();
 
-  if (!name) {
+  if (name === undefined || name === '') {
     return null;
   }
 
-  return {
+  const descIndex = headerMap.description;
+  const typeIndex = headerMap.type;
+  const requiredIndex = headerMap.required;
+  const exampleIndex = headerMap.example;
+  const allowedIndex = headerMap.allowedValues;
+
+  const description = descIndex !== undefined ? (values[descIndex]?.trim() ?? '') : '';
+  const typeStr = typeIndex !== undefined ? (values[typeIndex]?.trim() ?? 'string') : 'string';
+  const requiredStr =
+    requiredIndex !== undefined ? (values[requiredIndex]?.toLowerCase().trim() ?? '') : '';
+  const exampleStr = exampleIndex !== undefined ? values[exampleIndex]?.trim() : undefined;
+  const allowedStr = allowedIndex !== undefined ? values[allowedIndex] : undefined;
+
+  const variable: TrackingVariable = {
     name,
-    description: headerMap.description !== undefined
-      ? values[headerMap.description]?.trim() || ''
-      : '',
-    type: normalizeType(
-      headerMap.type !== undefined
-        ? values[headerMap.type]?.trim() || 'string'
-        : 'string'
-    ),
-    required: headerMap.required !== undefined
-      ? ['true', 'yes', '1', 'required'].includes(values[headerMap.required]?.toLowerCase().trim() || '')
-      : false,
-    example: headerMap.example !== undefined
-      ? values[headerMap.example]?.trim()
-      : undefined,
-    allowedValues: headerMap.allowedValues !== undefined
-      ? parseAllowedValues(values[headerMap.allowedValues])
-      : undefined,
+    description,
+    type: normalizeType(typeStr),
+    required: ['true', 'yes', '1', 'required'].includes(requiredStr),
   };
+
+  if (exampleStr !== undefined && exampleStr !== '') {
+    (variable as { example?: string }).example = exampleStr;
+  }
+
+  const allowedValues = parseAllowedValues(allowedStr);
+  if (allowedValues !== undefined) {
+    (variable as { allowedValues?: readonly (string | number)[] }).allowedValues = allowedValues;
+  }
+
+  return variable;
 }
 
 function normalizeType(type: string): 'string' | 'number' | 'boolean' | 'array' | 'object' {
   const lower = type.toLowerCase();
 
   if (['string', 'text', 'varchar', 'char'].includes(lower)) return 'string';
-  if (['number', 'int', 'integer', 'float', 'double', 'decimal', 'numeric'].includes(lower)) return 'number';
+  if (['number', 'int', 'integer', 'float', 'double', 'decimal', 'numeric'].includes(lower))
+    return 'number';
   if (['boolean', 'bool', 'bit'].includes(lower)) return 'boolean';
   if (['array', 'list', 'collection'].includes(lower)) return 'array';
   if (['object', 'json', 'map', 'dict'].includes(lower)) return 'object';
@@ -215,15 +276,18 @@ function normalizeType(type: string): 'string' | 'number' | 'boolean' | 'array' 
   return 'string';
 }
 
-function parseAllowedValues(value: string | undefined): string[] | undefined {
-  if (!value) return undefined;
+function parseAllowedValues(value: string | undefined): readonly string[] | undefined {
+  if (value === undefined || value === '') return undefined;
 
   const trimmed = value.trim();
 
   // Try JSON array
   if (trimmed.startsWith('[')) {
     try {
-      return JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((v: unknown) => String(v));
+      }
     } catch {
       // Fall through to other parsing
     }
@@ -231,45 +295,82 @@ function parseAllowedValues(value: string | undefined): string[] | undefined {
 
   // Try pipe-separated
   if (trimmed.includes('|')) {
-    return trimmed.split('|').map(v => v.trim());
+    return trimmed.split('|').map((v) => v.trim());
   }
 
   // Try comma-separated (if not already split by CSV parser)
   if (trimmed.includes(',')) {
-    return trimmed.split(',').map(v => v.trim());
+    return trimmed.split(',').map((v) => v.trim());
   }
 
   return [trimmed];
 }
 
-function normalizeSpec(parsed: Partial<TrackingSpec>): TrackingSpec {
-  return {
-    name: parsed.name || 'Unnamed Specification',
-    version: parsed.version,
-    description: parsed.description,
-    variables: (parsed.variables || []).map(normalizeVariable),
-    events: (parsed.events || []).map(normalizeEvent),
+function normalizeSpec(parsed: Record<string, unknown>): TrackingSpec {
+  const name = isString(parsed.name) ? parsed.name : 'Unnamed Specification';
+
+  const rawVariables = Array.isArray(parsed.variables) ? parsed.variables : [];
+  const rawEvents = Array.isArray(parsed.events) ? parsed.events : [];
+
+  const spec: TrackingSpec = {
+    name,
+    variables: rawVariables.map((v: unknown) => normalizeVariable(isRecord(v) ? v : {})),
+    events: rawEvents.map((e: unknown) => normalizeEvent(isRecord(e) ? e : {})),
   };
+
+  if (isString(parsed.version)) {
+    (spec as { version?: string }).version = parsed.version;
+  }
+  if (isString(parsed.description)) {
+    (spec as { description?: string }).description = parsed.description;
+  }
+
+  return spec;
 }
 
-function normalizeVariable(v: Partial<TrackingVariable>): TrackingVariable {
-  return {
-    name: v.name || '',
-    description: v.description || '',
-    type: normalizeType(v.type || 'string'),
-    required: v.required || false,
-    example: v.example,
-    allowedValues: v.allowedValues,
-    format: v.format,
+function normalizeVariable(v: Record<string, unknown>): TrackingVariable {
+  const name = isString(v.name) ? v.name : '';
+  const description = isString(v.description) ? v.description : '';
+  const typeStr = isString(v.type) ? v.type : 'string';
+  const required = v.required === true;
+
+  const variable: TrackingVariable = {
+    name,
+    description,
+    type: normalizeType(typeStr),
+    required,
   };
+
+  const example = v.example;
+  if (typeof example === 'string' || typeof example === 'number' || typeof example === 'boolean') {
+    (variable as { example?: string | number | boolean }).example = example;
+  }
+
+  if (Array.isArray(v.allowedValues)) {
+    const allowedValues = v.allowedValues.map((val: unknown) =>
+      typeof val === 'number' ? val : String(val)
+    );
+    (variable as { allowedValues?: readonly (string | number)[] }).allowedValues = allowedValues;
+  }
+
+  if (isString(v.format)) {
+    (variable as { format?: string }).format = v.format;
+  }
+
+  return variable;
 }
 
-function normalizeEvent(e: Partial<TrackingEvent>): TrackingEvent {
+function normalizeEvent(e: Record<string, unknown>): TrackingEvent {
+  const name = isString(e.name) ? e.name : '';
+  const description = isString(e.description) ? e.description : '';
+  const trigger = isString(e.trigger) ? e.trigger : '';
+  const rawVariables = Array.isArray(e.variables) ? e.variables : [];
+
   return {
-    name: e.name || '',
-    description: e.description || '',
-    trigger: e.trigger || '',
-    variables: (e.variables || []).map(normalizeVariable),
+    name,
+    description,
+    trigger,
+    variables: rawVariables.map((v: unknown) => normalizeVariable(isRecord(v) ? v : {})),
   };
 }
 
@@ -277,20 +378,29 @@ function inferSpecFromDataLayer(dataLayer: Record<string, unknown>): TrackingSpe
   const variables: TrackingVariable[] = [];
 
   function extractVariables(obj: unknown, path: string): void {
-    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    if (isRecord(obj)) {
       for (const [key, value] of Object.entries(obj)) {
-        const currentPath = path ? `${path}.${key}` : key;
+        const currentPath = path !== '' ? `${path}.${key}` : key;
 
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (isRecord(value)) {
           extractVariables(value, currentPath);
         } else {
-          variables.push({
+          const variable: TrackingVariable = {
             name: currentPath,
             description: `Inferred from data layer`,
             type: inferType(value),
             required: false,
-            example: typeof value === 'object' ? undefined : value as string | number | boolean,
-          });
+          };
+
+          if (
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'boolean'
+          ) {
+            (variable as { example?: string | number | boolean }).example = value;
+          }
+
+          variables.push(variable);
         }
       }
     }
@@ -300,7 +410,7 @@ function inferSpecFromDataLayer(dataLayer: Record<string, unknown>): TrackingSpe
     if (Array.isArray(value)) return 'array';
     if (typeof value === 'number') return 'number';
     if (typeof value === 'boolean') return 'boolean';
-    if (typeof value === 'object' && value !== null) return 'object';
+    if (isRecord(value)) return 'object';
     return 'string';
   }
 
@@ -318,11 +428,11 @@ export function formatParsedSpec(spec: TrackingSpec): string {
   const lines: string[] = [];
 
   lines.push(`# ${spec.name}`);
-  if (spec.version) lines.push(`**Version:** ${spec.version}`);
-  if (spec.description) lines.push(`\n${spec.description}`);
+  if (spec.version !== undefined) lines.push(`**Version:** ${spec.version}`);
+  if (spec.description !== undefined) lines.push(`\n${spec.description}`);
   lines.push('');
 
-  lines.push(`## Variables (${spec.variables.length})`);
+  lines.push(`## Variables (${String(spec.variables.length)})`);
   lines.push('');
 
   if (spec.variables.length > 0) {
@@ -336,13 +446,13 @@ export function formatParsedSpec(spec: TrackingSpec): string {
 
   if (spec.events.length > 0) {
     lines.push('');
-    lines.push(`## Events (${spec.events.length})`);
+    lines.push(`## Events (${String(spec.events.length)})`);
     lines.push('');
 
     for (const event of spec.events) {
       lines.push(`### ${event.name}`);
       lines.push(`- **Trigger:** ${event.trigger}`);
-      lines.push(`- **Variables:** ${event.variables.length}`);
+      lines.push(`- **Variables:** ${String(event.variables.length)}`);
       lines.push('');
     }
   }

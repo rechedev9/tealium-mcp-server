@@ -1,5 +1,3 @@
-import type { JSONSchemaType } from 'ajv';
-
 // Standard Data Layer Schema
 export const standardSchema = {
   $id: 'tealium://schema/standard',
@@ -118,7 +116,10 @@ export const hotelSchema = {
         hotelCity: { type: 'string' },
         hotelCountry: { type: 'string', pattern: '^[A-Z]{2}$' },
         hotelStarRating: { type: 'number', minimum: 1, maximum: 5 },
-        hotelCategory: { type: 'string', enum: ['resort', 'city', 'beach', 'boutique', 'business'] },
+        hotelCategory: {
+          type: 'string',
+          enum: ['resort', 'city', 'beach', 'boutique', 'business'],
+        },
       },
       required: ['hotelCode', 'hotelName'],
     },
@@ -151,7 +152,15 @@ export const hotelSchema = {
         bookingTaxes: { type: 'number', minimum: 0 },
         bookingFees: { type: 'number', minimum: 0 },
       },
-      required: ['bookingCheckIn', 'bookingCheckOut', 'bookingNights', 'bookingAdults', 'bookingRooms', 'bookingTotal', 'bookingCurrency'],
+      required: [
+        'bookingCheckIn',
+        'bookingCheckOut',
+        'bookingNights',
+        'bookingAdults',
+        'bookingRooms',
+        'bookingTotal',
+        'bookingCurrency',
+      ],
     },
     guest: {
       type: 'object',
@@ -174,10 +183,10 @@ export const schemas: Record<string, object> = {
 };
 
 export function getSchema(uri: string): object | null {
-  return schemas[uri] || null;
+  return schemas[uri] ?? null;
 }
 
-export function listSchemas(): Array<{ uri: string; name: string; description: string }> {
+export function listSchemas(): { uri: string; name: string; description: string }[] {
   return [
     {
       uri: 'tealium://schema/standard',

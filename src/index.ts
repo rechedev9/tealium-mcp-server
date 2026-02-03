@@ -11,13 +11,15 @@ import {
 
 import { validateDataLayer, formatValidationResult } from './tools/validate.js';
 import { generateDocumentation } from './tools/document.js';
-import { debugDataLayer, formatDebugResult } from './tools/debug.js';
+import { debugDataLayer, formatDebugResult } from './tools/debug/index.js';
 import { generateCode } from './tools/generate.js';
 import { parseTrackingSpec, formatParsedSpec } from './tools/parse-spec.js';
 import { schemas, listSchemas } from './resources/schemas.js';
 import { bestPractices, templates, listTemplates } from './resources/best-practices.js';
+import { isRecord, isString, isBoolean, isStringArray } from './types/index.js';
 
-// Create the server
+// Create the server (using Server for advanced request handling)
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 const server = new Server(
   {
     name: 'tealium-mcp-server',
@@ -35,7 +37,8 @@ const server = new Server(
 const tools = [
   {
     name: 'validate_data_layer',
-    description: 'Validates a Tealium data layer object against schemas and best practices. Returns errors, warnings, and suggestions for improvement.',
+    description:
+      'Validates a Tealium data layer object against schemas and best practices. Returns errors, warnings, and suggestions for improvement.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -45,7 +48,8 @@ const tools = [
         },
         schemaUri: {
           type: 'string',
-          description: 'Schema to validate against (tealium://schema/standard, tealium://schema/ecommerce, or tealium://schema/hotels)',
+          description:
+            'Schema to validate against (tealium://schema/standard, tealium://schema/ecommerce, or tealium://schema/hotels)',
           default: 'tealium://schema/standard',
         },
         strictMode: {
@@ -59,7 +63,8 @@ const tools = [
   },
   {
     name: 'generate_documentation',
-    description: 'Generates documentation from a data layer structure or tracking specification. Outputs Markdown or JSON Schema format.',
+    description:
+      'Generates documentation from a data layer structure or tracking specification. Outputs Markdown or JSON Schema format.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -82,7 +87,8 @@ const tools = [
   },
   {
     name: 'debug_data_layer',
-    description: 'Analyzes a data layer for common issues, missing variables, type mismatches, and provides recommendations. Perfect for troubleshooting tracking issues.',
+    description:
+      'Analyzes a data layer for common issues, missing variables, type mismatches, and provides recommendations. Perfect for troubleshooting tracking issues.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -101,7 +107,8 @@ const tools = [
   },
   {
     name: 'generate_code',
-    description: 'Generates TypeScript or JavaScript code from a tracking specification or data layer. Includes type definitions, helper functions, and event tracking code.',
+    description:
+      'Generates TypeScript or JavaScript code from a tracking specification or data layer. Includes type definitions, helper functions, and event tracking code.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -129,7 +136,8 @@ const tools = [
   },
   {
     name: 'parse_tracking_spec',
-    description: 'Parses tracking specifications from CSV or JSON format (e.g., exported from Google Sheets or Excel). Normalizes the data into a structured format.',
+    description:
+      'Parses tracking specifications from CSV or JSON format (e.g., exported from Google Sheets or Excel). Normalizes the data into a structured format.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -154,22 +162,83 @@ const tools = [
   },
 ];
 
+// Type-safe argument extraction helpers
+function getStringArg(
+  args: Record<string, unknown>,
+  key: string,
+  defaultValue?: string
+): string | undefined {
+  const value = args[key];
+  if (isString(value)) {
+    return value;
+  }
+  return defaultValue;
+}
+
+function getBooleanArg(
+  args: Record<string, unknown>,
+  key: string,
+  defaultValue?: boolean
+): boolean | undefined {
+  const value = args[key];
+  if (isBoolean(value)) {
+    return value;
+  }
+  return defaultValue;
+}
+
+function getStringArrayArg(args: Record<string, unknown>, key: string): string[] | undefined {
+  const value = args[key];
+  if (isStringArray(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function getRecordArg(
+  args: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = args[key];
+  if (isRecord(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function isValidFormat(value: unknown): value is 'markdown' | 'json-schema' {
+  return value === 'markdown' || value === 'json-schema';
+}
+
+function isValidLanguage(value: unknown): value is 'typescript' | 'javascript' {
+  return value === 'typescript' || value === 'javascript';
+}
+
+function isValidParseFormat(value: unknown): value is 'csv' | 'json' | 'auto' {
+  return value === 'csv' || value === 'json' || value === 'auto';
+}
+
 // Handle tool listing
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
+server.setRequestHandler(ListToolsRequestSchema, () => ({
   tools,
 }));
 
 // Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+server.setRequestHandler(CallToolRequestSchema, (request) => {
+  const { name, arguments: rawArgs } = request.params;
+  const args: Record<string, unknown> = isRecord(rawArgs) ? rawArgs : {};
 
   try {
     switch (name) {
       case 'validate_data_layer': {
+        const dataLayer = args.dataLayer;
+        const schemaUri = getStringArg(args, 'schemaUri') ?? 'tealium://schema/standard';
+        const strictMode = getBooleanArg(args, 'strictMode') ?? false;
+
         const result = validateDataLayer({
-          dataLayer: args?.dataLayer,
-          schemaUri: args?.schemaUri as string | undefined,
-          strictMode: args?.strictMode as boolean | undefined,
+          dataLayer,
+          schemaUri,
+          strictMode,
         });
         return {
           content: [
@@ -182,10 +251,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'generate_documentation': {
+        const dataLayer = getRecordArg(args, 'dataLayer');
+        const spec = getRecordArg(args, 'spec');
+        const formatArg = args.format;
+        const format = isValidFormat(formatArg) ? formatArg : 'markdown';
+
         const doc = generateDocumentation({
-          dataLayer: args?.dataLayer as Record<string, unknown> | undefined,
-          spec: args?.spec as import('./types/index.js').TrackingSpec | undefined,
-          format: args?.format as 'markdown' | 'json-schema' | undefined,
+          dataLayer,
+          spec,
+          format,
         });
         return {
           content: [
@@ -198,9 +272,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'debug_data_layer': {
+        const dataLayer = args.dataLayer;
+        const checkPoints = getStringArrayArg(args, 'checkPoints') ?? [];
+
         const result = debugDataLayer({
-          dataLayer: args?.dataLayer as import('./types/index.js').TealiumDataLayer,
-          checkPoints: args?.checkPoints as string[] | undefined,
+          dataLayer,
+          checkPoints,
         });
         return {
           content: [
@@ -213,11 +290,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'generate_code': {
+        const spec = getRecordArg(args, 'spec');
+        const dataLayer = getRecordArg(args, 'dataLayer');
+        const languageArg = args.language;
+        const language = isValidLanguage(languageArg) ? languageArg : 'typescript';
+        const includeHelpers = getBooleanArg(args, 'includeHelpers') ?? true;
+
         const code = generateCode({
-          spec: args?.spec as import('./types/index.js').TrackingSpec | undefined,
-          dataLayer: args?.dataLayer as Record<string, unknown> | undefined,
-          language: args?.language as 'typescript' | 'javascript' | undefined,
-          includeHelpers: args?.includeHelpers as boolean | undefined,
+          spec,
+          dataLayer,
+          language,
+          includeHelpers,
         });
         return {
           content: [
@@ -230,16 +313,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'parse_tracking_spec': {
+        const content = getStringArg(args, 'content');
+        if (content === undefined) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Error: content is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const formatArg = args.format;
+        const format = isValidParseFormat(formatArg) ? formatArg : 'auto';
+        const hasHeader = getBooleanArg(args, 'hasHeader') ?? true;
+
         const spec = parseTrackingSpec({
-          content: args?.content as string,
-          format: args?.format as 'csv' | 'json' | 'auto' | undefined,
-          hasHeader: args?.hasHeader as boolean | undefined,
+          content,
+          format,
+          hasHeader,
         });
         return {
           content: [
             {
               type: 'text',
-              text: formatParsedSpec(spec) + '\n\n```json\n' + JSON.stringify(spec, null, 2) + '\n```',
+              text:
+                formatParsedSpec(spec) + '\n\n```json\n' + JSON.stringify(spec, null, 2) + '\n```',
             },
           ],
         };
@@ -271,13 +372,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Define resources
 const resources = [
-  ...listSchemas().map(s => ({
+  ...listSchemas().map((s) => ({
     uri: s.uri,
     name: s.name,
     description: s.description,
     mimeType: 'application/json',
   })),
-  ...listTemplates().map(t => ({
+  ...listTemplates().map((t) => ({
     uri: t.uri,
     name: t.name,
     description: t.description,
@@ -292,18 +393,18 @@ const resources = [
 ];
 
 // Handle resource listing
-server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+server.setRequestHandler(ListResourcesRequestSchema, () => ({
   resources,
 }));
 
 // Handle resource reading
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+server.setRequestHandler(ReadResourceRequestSchema, (request) => {
   const { uri } = request.params;
 
   // Check schemas
   if (uri.startsWith('tealium://schema/')) {
-    const schema = schemas[uri];
-    if (schema) {
+    const schema: object | undefined = schemas[uri];
+    if (schema !== undefined) {
       return {
         contents: [
           {
@@ -318,8 +419,8 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
   // Check templates
   if (uri.startsWith('tealium://templates/')) {
-    const template = templates[uri];
-    if (template) {
+    const template: string | undefined = templates[uri];
+    if (template !== undefined) {
       return {
         contents: [
           {
@@ -349,13 +450,13 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 });
 
 // Start the server
-async function main() {
+async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Tealium MCP Server started');
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
