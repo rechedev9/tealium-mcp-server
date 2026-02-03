@@ -54,13 +54,10 @@ export function validateDataLayer(args: ValidateDataLayerArgs): ValidationResult
   // In strict mode, treat warnings as errors
   if (strictMode) {
     for (const warning of allWarnings) {
-      const error: ValidationError = {
-        path: warning.path,
-        message: warning.message,
-      };
-      if (warning.suggestion !== undefined) {
-        (error as { expected?: string }).expected = warning.suggestion;
-      }
+      const error: ValidationError =
+        warning.suggestion !== undefined
+          ? { path: warning.path, message: warning.message, expected: warning.suggestion }
+          : { path: warning.path, message: warning.message };
       allErrors.push(error);
     }
   }

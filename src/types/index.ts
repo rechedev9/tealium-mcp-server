@@ -206,6 +206,12 @@ export interface GeneratedCode {
   readonly filename?: string;
 }
 
+// String utilities
+export function capitalizeFirst(str: string): string {
+  const first = str.charAt(0);
+  return first.toUpperCase() + str.slice(1);
+}
+
 // Re-export from other type files
 export type { Result } from './result.js';
 export { success, failure, unwrap, unwrapOr, mapResult, mapError } from './result.js';

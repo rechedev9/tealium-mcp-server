@@ -1,5 +1,5 @@
 import type { TealiumDataLayer, TrackingSpec } from '../types/index.js';
-import { isRecord, isTealiumDataLayer, isTrackingSpec } from '../types/index.js';
+import { isRecord, isTealiumDataLayer, isTrackingSpec, capitalizeFirst } from '../types/index.js';
 
 export interface GenerateDocumentationArgs {
   readonly dataLayer?: unknown;
@@ -221,11 +221,6 @@ function inferSchemaFromObject(obj: unknown, title: string): Record<string, unkn
   }
 
   return { type: typeof obj };
-}
-
-function capitalizeFirst(str: string): string {
-  const first = str.charAt(0);
-  return first.toUpperCase() + str.slice(1);
 }
 
 function getTypeString(value: unknown): string {

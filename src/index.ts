@@ -162,61 +162,33 @@ const tools = [
   },
 ];
 
-// Type-safe argument extraction helpers
-function getStringArg(
+// Type-safe argument extraction helper
+function getArg<T>(
   args: Record<string, unknown>,
   key: string,
-  defaultValue?: string
-): string | undefined {
+  guard: (v: unknown) => v is T
+): T | undefined {
   const value = args[key];
-  if (isString(value)) {
-    return value;
-  }
-  return defaultValue;
+  return guard(value) ? value : undefined;
 }
 
-function getBooleanArg(
-  args: Record<string, unknown>,
-  key: string,
-  defaultValue?: boolean
-): boolean | undefined {
-  const value = args[key];
-  if (isBoolean(value)) {
-    return value;
-  }
-  return defaultValue;
+// Literal value validators
+const DOC_FORMATS = ['markdown', 'json-schema'] as const;
+const CODE_LANGUAGES = ['typescript', 'javascript'] as const;
+const PARSE_FORMATS = ['csv', 'json', 'auto'] as const;
+
+type DocFormat = (typeof DOC_FORMATS)[number];
+type CodeLanguage = (typeof CODE_LANGUAGES)[number];
+type ParseFormat = (typeof PARSE_FORMATS)[number];
+
+function isOneOf<T extends string>(values: readonly T[]): (value: unknown) => value is T {
+  return (value: unknown): value is T =>
+    typeof value === 'string' && (values as readonly string[]).includes(value);
 }
 
-function getStringArrayArg(args: Record<string, unknown>, key: string): string[] | undefined {
-  const value = args[key];
-  if (isStringArray(value)) {
-    return value;
-  }
-  return undefined;
-}
-
-function getRecordArg(
-  args: Record<string, unknown>,
-  key: string
-): Record<string, unknown> | undefined {
-  const value = args[key];
-  if (isRecord(value)) {
-    return value;
-  }
-  return undefined;
-}
-
-function isValidFormat(value: unknown): value is 'markdown' | 'json-schema' {
-  return value === 'markdown' || value === 'json-schema';
-}
-
-function isValidLanguage(value: unknown): value is 'typescript' | 'javascript' {
-  return value === 'typescript' || value === 'javascript';
-}
-
-function isValidParseFormat(value: unknown): value is 'csv' | 'json' | 'auto' {
-  return value === 'csv' || value === 'json' || value === 'auto';
-}
+const isDocFormat = isOneOf(DOC_FORMATS);
+const isCodeLanguage = isOneOf(CODE_LANGUAGES);
+const isParseFormat = isOneOf(PARSE_FORMATS);
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -232,109 +204,61 @@ server.setRequestHandler(CallToolRequestSchema, (request) => {
     switch (name) {
       case 'validate_data_layer': {
         const dataLayer = args.dataLayer;
-        const schemaUri = getStringArg(args, 'schemaUri') ?? 'tealium://schema/standard';
-        const strictMode = getBooleanArg(args, 'strictMode') ?? false;
+        const schemaUri = getArg(args, 'schemaUri', isString) ?? 'tealium://schema/standard';
+        const strictMode = getArg(args, 'strictMode', isBoolean) ?? false;
 
-        const result = validateDataLayer({
-          dataLayer,
-          schemaUri,
-          strictMode,
-        });
+        const result = validateDataLayer({ dataLayer, schemaUri, strictMode });
         return {
-          content: [
-            {
-              type: 'text',
-              text: formatValidationResult(result),
-            },
-          ],
+          content: [{ type: 'text', text: formatValidationResult(result) }],
         };
       }
 
       case 'generate_documentation': {
-        const dataLayer = getRecordArg(args, 'dataLayer');
-        const spec = getRecordArg(args, 'spec');
-        const formatArg = args.format;
-        const format = isValidFormat(formatArg) ? formatArg : 'markdown';
+        const dataLayer = getArg(args, 'dataLayer', isRecord);
+        const spec = getArg(args, 'spec', isRecord);
+        const format: DocFormat = getArg(args, 'format', isDocFormat) ?? 'markdown';
 
-        const doc = generateDocumentation({
-          dataLayer,
-          spec,
-          format,
-        });
+        const doc = generateDocumentation({ dataLayer, spec, format });
         return {
-          content: [
-            {
-              type: 'text',
-              text: doc,
-            },
-          ],
+          content: [{ type: 'text', text: doc }],
         };
       }
 
       case 'debug_data_layer': {
         const dataLayer = args.dataLayer;
-        const checkPoints = getStringArrayArg(args, 'checkPoints') ?? [];
+        const checkPoints = getArg(args, 'checkPoints', isStringArray) ?? [];
 
-        const result = debugDataLayer({
-          dataLayer,
-          checkPoints,
-        });
+        const result = debugDataLayer({ dataLayer, checkPoints });
         return {
-          content: [
-            {
-              type: 'text',
-              text: formatDebugResult(result),
-            },
-          ],
+          content: [{ type: 'text', text: formatDebugResult(result) }],
         };
       }
 
       case 'generate_code': {
-        const spec = getRecordArg(args, 'spec');
-        const dataLayer = getRecordArg(args, 'dataLayer');
-        const languageArg = args.language;
-        const language = isValidLanguage(languageArg) ? languageArg : 'typescript';
-        const includeHelpers = getBooleanArg(args, 'includeHelpers') ?? true;
+        const spec = getArg(args, 'spec', isRecord);
+        const dataLayer = getArg(args, 'dataLayer', isRecord);
+        const language: CodeLanguage = getArg(args, 'language', isCodeLanguage) ?? 'typescript';
+        const includeHelpers = getArg(args, 'includeHelpers', isBoolean) ?? true;
 
-        const code = generateCode({
-          spec,
-          dataLayer,
-          language,
-          includeHelpers,
-        });
+        const code = generateCode({ spec, dataLayer, language, includeHelpers });
         return {
-          content: [
-            {
-              type: 'text',
-              text: `\`\`\`${code.language}\n${code.code}\n\`\`\``,
-            },
-          ],
+          content: [{ type: 'text', text: `\`\`\`${code.language}\n${code.code}\n\`\`\`` }],
         };
       }
 
       case 'parse_tracking_spec': {
-        const content = getStringArg(args, 'content');
+        const content = getArg(args, 'content', isString);
         if (content === undefined) {
           return {
-            content: [
-              {
-                type: 'text',
-                text: 'Error: content is required',
-              },
-            ],
+            content: [{ type: 'text', text: 'Error: content is required' }],
             isError: true,
           };
         }
 
-        const formatArg = args.format;
-        const format = isValidParseFormat(formatArg) ? formatArg : 'auto';
-        const hasHeader = getBooleanArg(args, 'hasHeader') ?? true;
+        const format: ParseFormat = getArg(args, 'format', isParseFormat) ?? 'auto';
+        const hasHeader = getArg(args, 'hasHeader', isBoolean) ?? true;
 
-        const spec = parseTrackingSpec({
-          content,
-          format,
-          hasHeader,
-        });
+        const spec = parseTrackingSpec({ content, format, hasHeader });
         return {
           content: [
             {

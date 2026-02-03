@@ -242,25 +242,18 @@ function extractVariable(
   const requiredStr =
     requiredIndex !== undefined ? (values[requiredIndex]?.toLowerCase().trim() ?? '') : '';
   const exampleStr = exampleIndex !== undefined ? values[exampleIndex]?.trim() : undefined;
-  const allowedStr = allowedIndex !== undefined ? values[allowedIndex] : undefined;
+  const allowedValues = parseAllowedValues(
+    allowedIndex !== undefined ? values[allowedIndex] : undefined
+  );
 
-  const variable: TrackingVariable = {
+  return {
     name,
     description,
     type: normalizeType(typeStr),
     required: ['true', 'yes', '1', 'required'].includes(requiredStr),
+    ...(exampleStr !== undefined && exampleStr !== '' ? { example: exampleStr } : {}),
+    ...(allowedValues !== undefined ? { allowedValues } : {}),
   };
-
-  if (exampleStr !== undefined && exampleStr !== '') {
-    (variable as { example?: string }).example = exampleStr;
-  }
-
-  const allowedValues = parseAllowedValues(allowedStr);
-  if (allowedValues !== undefined) {
-    (variable as { allowedValues?: readonly (string | number)[] }).allowedValues = allowedValues;
-  }
-
-  return variable;
 }
 
 function normalizeType(type: string): 'string' | 'number' | 'boolean' | 'array' | 'object' {
@@ -308,24 +301,16 @@ function parseAllowedValues(value: string | undefined): readonly string[] | unde
 
 function normalizeSpec(parsed: Record<string, unknown>): TrackingSpec {
   const name = isString(parsed.name) ? parsed.name : 'Unnamed Specification';
-
   const rawVariables = Array.isArray(parsed.variables) ? parsed.variables : [];
   const rawEvents = Array.isArray(parsed.events) ? parsed.events : [];
 
-  const spec: TrackingSpec = {
+  return {
     name,
+    ...(isString(parsed.version) ? { version: parsed.version } : {}),
+    ...(isString(parsed.description) ? { description: parsed.description } : {}),
     variables: rawVariables.map((v: unknown) => normalizeVariable(isRecord(v) ? v : {})),
     events: rawEvents.map((e: unknown) => normalizeEvent(isRecord(e) ? e : {})),
   };
-
-  if (isString(parsed.version)) {
-    (spec as { version?: string }).version = parsed.version;
-  }
-  if (isString(parsed.description)) {
-    (spec as { description?: string }).description = parsed.description;
-  }
-
-  return spec;
 }
 
 function normalizeVariable(v: Record<string, unknown>): TrackingVariable {
@@ -333,31 +318,25 @@ function normalizeVariable(v: Record<string, unknown>): TrackingVariable {
   const description = isString(v.description) ? v.description : '';
   const typeStr = isString(v.type) ? v.type : 'string';
   const required = v.required === true;
+  const example = v.example;
+  const hasValidExample =
+    typeof example === 'string' || typeof example === 'number' || typeof example === 'boolean';
 
-  const variable: TrackingVariable = {
+  return {
     name,
     description,
     type: normalizeType(typeStr),
     required,
+    ...(hasValidExample ? { example } : {}),
+    ...(Array.isArray(v.allowedValues)
+      ? {
+          allowedValues: v.allowedValues.map((val: unknown) =>
+            typeof val === 'number' ? val : String(val)
+          ),
+        }
+      : {}),
+    ...(isString(v.format) ? { format: v.format } : {}),
   };
-
-  const example = v.example;
-  if (typeof example === 'string' || typeof example === 'number' || typeof example === 'boolean') {
-    (variable as { example?: string | number | boolean }).example = example;
-  }
-
-  if (Array.isArray(v.allowedValues)) {
-    const allowedValues = v.allowedValues.map((val: unknown) =>
-      typeof val === 'number' ? val : String(val)
-    );
-    (variable as { allowedValues?: readonly (string | number)[] }).allowedValues = allowedValues;
-  }
-
-  if (isString(v.format)) {
-    (variable as { format?: string }).format = v.format;
-  }
-
-  return variable;
 }
 
 function normalizeEvent(e: Record<string, unknown>): TrackingEvent {
@@ -374,52 +353,44 @@ function normalizeEvent(e: Record<string, unknown>): TrackingEvent {
   };
 }
 
-function inferSpecFromDataLayer(dataLayer: Record<string, unknown>): TrackingSpec {
-  const variables: TrackingVariable[] = [];
+function inferType(value: unknown): 'string' | 'number' | 'boolean' | 'array' | 'object' {
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (isRecord(value)) return 'object';
+  return 'string';
+}
 
-  function extractVariables(obj: unknown, path: string): void {
-    if (isRecord(obj)) {
-      for (const [key, value] of Object.entries(obj)) {
-        const currentPath = path !== '' ? `${path}.${key}` : key;
+function extractVariablesFromObject(obj: unknown, path: string): readonly TrackingVariable[] {
+  if (!isRecord(obj)) return [];
 
-        if (isRecord(value)) {
-          extractVariables(value, currentPath);
-        } else {
-          const variable: TrackingVariable = {
-            name: currentPath,
-            description: `Inferred from data layer`,
-            type: inferType(value),
-            required: false,
-          };
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const currentPath = path !== '' ? `${path}.${key}` : key;
 
-          if (
-            typeof value === 'string' ||
-            typeof value === 'number' ||
-            typeof value === 'boolean'
-          ) {
-            (variable as { example?: string | number | boolean }).example = value;
-          }
-
-          variables.push(variable);
-        }
-      }
+    if (isRecord(value)) {
+      return extractVariablesFromObject(value, currentPath);
     }
-  }
 
-  function inferType(value: unknown): 'string' | 'number' | 'boolean' | 'array' | 'object' {
-    if (Array.isArray(value)) return 'array';
-    if (typeof value === 'number') return 'number';
-    if (typeof value === 'boolean') return 'boolean';
-    if (isRecord(value)) return 'object';
-    return 'string';
-  }
+    const isPrimitive =
+      typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 
-  extractVariables(dataLayer, '');
+    return [
+      {
+        name: currentPath,
+        description: 'Inferred from data layer',
+        type: inferType(value),
+        required: false,
+        ...(isPrimitive ? { example: value } : {}),
+      },
+    ];
+  });
+}
 
+function inferSpecFromDataLayer(dataLayer: Record<string, unknown>): TrackingSpec {
   return {
     name: 'Inferred Specification',
     description: 'Auto-generated from data layer structure',
-    variables,
+    variables: extractVariablesFromObject(dataLayer, ''),
     events: [],
   };
 }

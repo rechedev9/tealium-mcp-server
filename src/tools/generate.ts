@@ -1,5 +1,5 @@
 import type { TrackingSpec, TrackingVariable, GeneratedCode } from '../types/index.js';
-import { isRecord, isTrackingSpec } from '../types/index.js';
+import { isRecord, isTrackingSpec, capitalizeFirst } from '../types/index.js';
 
 export interface GenerateCodeArgs {
   readonly spec?: unknown;
@@ -160,22 +160,13 @@ function generateCodeFromDataLayer(
 
 function groupVariablesBySection(
   variables: readonly TrackingVariable[]
-): Record<string, TrackingVariable[]> {
-  const sections: Record<string, TrackingVariable[]> = {};
-
-  for (const variable of variables) {
+): Record<string, readonly TrackingVariable[]> {
+  return variables.reduce<Record<string, readonly TrackingVariable[]>>((sections, variable) => {
     const parts = variable.name.split('.');
     const section = parts[0] ?? 'default';
-
-    const existing = sections[section];
-    if (existing === undefined) {
-      sections[section] = [variable];
-    } else {
-      existing.push(variable);
-    }
-  }
-
-  return sections;
+    const existing = sections[section] ?? [];
+    return { ...sections, [section]: [...existing, variable] };
+  }, {});
 }
 
 function toTypeScriptType(type: string): string {
@@ -193,11 +184,6 @@ function toTypeScriptType(type: string): string {
     default:
       return 'unknown';
   }
-}
-
-function capitalizeFirst(str: string): string {
-  const first = str.charAt(0);
-  return first.toUpperCase() + str.slice(1);
 }
 
 function generateInterfaceFromObject(name: string, obj: Record<string, unknown>): string {
