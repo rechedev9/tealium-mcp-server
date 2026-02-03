@@ -38,28 +38,17 @@ export function validateAgainstSchema(
 
   if (!valid && validate.errors !== undefined && validate.errors !== null) {
     for (const error of validate.errors) {
-      const validationError: ValidationError = {
+      const baseError = {
         path: error.instancePath === '' ? '/' : error.instancePath,
         message: formatAjvError(error),
         value: error.data,
       };
-      if (error.schema !== undefined) {
-        let schemaValue: string;
-        if (error.schema === null) {
-          schemaValue = 'null';
-        } else if (typeof error.schema === 'object') {
-          schemaValue = JSON.stringify(error.schema);
-        } else if (
-          typeof error.schema === 'string' ||
-          typeof error.schema === 'number' ||
-          typeof error.schema === 'boolean'
-        ) {
-          schemaValue = String(error.schema);
-        } else {
-          schemaValue = 'unknown';
-        }
-        (validationError as { expected?: string }).expected = schemaValue;
-      }
+
+      const validationError: ValidationError =
+        error.schema !== undefined
+          ? { ...baseError, expected: stringifySchema(error.schema) }
+          : baseError;
+
       errors.push(validationError);
     }
   }
@@ -78,36 +67,55 @@ export function validateAgainstSchema(
   };
 }
 
+function stringifySchema(schema: unknown): string {
+  if (schema === null) return 'null';
+  if (typeof schema === 'object') return JSON.stringify(schema);
+  if (typeof schema === 'string' || typeof schema === 'number' || typeof schema === 'boolean') {
+    return String(schema);
+  }
+  return 'unknown';
+}
+
+function getParamString(params: Record<string, unknown>, key: string): string | undefined {
+  const value = params[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getParamNumber(params: Record<string, unknown>, key: string): number | undefined {
+  const value = params[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getParamArray(params: Record<string, unknown>, key: string): unknown[] | undefined {
+  const value = params[key];
+  return Array.isArray(value) ? value : undefined;
+}
+
 function formatAjvError(error: ErrorObject): string {
+  const params = error.params as Record<string, unknown>;
+
   switch (error.keyword) {
     case 'required': {
-      const params = error.params as { missingProperty?: string };
-      return `Missing required property: ${params.missingProperty ?? 'unknown'}`;
+      return `Missing required property: ${getParamString(params, 'missingProperty') ?? 'unknown'}`;
     }
     case 'type': {
-      const params = error.params as { type?: string };
-      return `Expected ${params.type ?? 'unknown'}, got ${typeof error.data}`;
+      return `Expected ${getParamString(params, 'type') ?? 'unknown'}, got ${typeof error.data}`;
     }
     case 'enum': {
-      const params = error.params as { allowedValues?: unknown[] };
-      const values = params.allowedValues;
+      const values = getParamArray(params, 'allowedValues');
       return `Value must be one of: ${values !== undefined ? values.join(', ') : 'unknown'}`;
     }
     case 'minLength': {
-      const params = error.params as { limit?: number };
-      return `String is too short (minimum ${String(params.limit ?? 0)} characters)`;
+      return `String is too short (minimum ${String(getParamNumber(params, 'limit') ?? 0)} characters)`;
     }
     case 'pattern': {
-      const params = error.params as { pattern?: string };
-      return `Value does not match pattern: ${params.pattern ?? 'unknown'}`;
+      return `Value does not match pattern: ${getParamString(params, 'pattern') ?? 'unknown'}`;
     }
     case 'minimum': {
-      const params = error.params as { limit?: number };
-      return `Value must be >= ${String(params.limit ?? 0)}`;
+      return `Value must be >= ${String(getParamNumber(params, 'limit') ?? 0)}`;
     }
     case 'maximum': {
-      const params = error.params as { limit?: number };
-      return `Value must be <= ${String(params.limit ?? 0)}`;
+      return `Value must be <= ${String(getParamNumber(params, 'limit') ?? 0)}`;
     }
     default:
       return error.message ?? 'Validation error';

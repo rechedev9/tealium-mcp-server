@@ -139,17 +139,8 @@ function generateMarkdownFromDataLayer(dataLayer: TealiumDataLayer): string {
 }
 
 function generateJsonSchemaFromSpec(spec: TrackingSpec): string {
-  const schema: Record<string, unknown> = {
-    $schema: 'http://json-schema.org/draft-07/schema#',
-    title: spec.name,
-    description: spec.description,
-    type: 'object',
-    properties: {} as Record<string, unknown>,
-    required: [] as string[],
-  };
-
-  const properties = schema.properties as Record<string, unknown>;
-  const required = schema.required as string[];
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
 
   for (const variable of spec.variables) {
     const parts = variable.name.split('.');
@@ -186,6 +177,15 @@ function generateJsonSchemaFromSpec(spec: TrackingSpec): string {
       required.push(variable.name);
     }
   }
+
+  const schema: Record<string, unknown> = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    title: spec.name,
+    description: spec.description,
+    type: 'object',
+    properties,
+    required,
+  };
 
   return JSON.stringify(schema, null, 2);
 }
