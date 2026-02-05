@@ -33,7 +33,7 @@ export function validateAgainstSchema(
     };
   }
 
-  // Run validation
+  // Run validation — validate() returns boolean | PromiseLike<any> from Ajv types
   const valid = validate(dataLayer);
 
   if (!valid && validate.errors !== undefined && validate.errors !== null) {
@@ -92,7 +92,7 @@ function getParamArray(params: Record<string, unknown>, key: string): unknown[] 
 }
 
 function formatAjvError(error: ErrorObject): string {
-  const params = error.params as Record<string, unknown>;
+  const params: Record<string, unknown> = error.params;
 
   switch (error.keyword) {
     case 'required': {

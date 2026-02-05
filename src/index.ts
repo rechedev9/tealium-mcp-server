@@ -182,8 +182,8 @@ type CodeLanguage = (typeof CODE_LANGUAGES)[number];
 type ParseFormat = (typeof PARSE_FORMATS)[number];
 
 function isOneOf<T extends string>(values: readonly T[]): (value: unknown) => value is T {
-  return (value: unknown): value is T =>
-    typeof value === 'string' && (values as readonly string[]).includes(value);
+  const set = new Set<string>(values);
+  return (value: unknown): value is T => typeof value === 'string' && set.has(value);
 }
 
 const isDocFormat = isOneOf(DOC_FORMATS);
@@ -281,7 +281,7 @@ server.setRequestHandler(CallToolRequestSchema, (request) => {
           isError: true,
         };
     }
-  } catch (error) {
+  } catch (error: unknown) {
     return {
       content: [
         {

@@ -71,6 +71,12 @@ export function isPageData(value: unknown): value is PageData {
  */
 export function isUserData(value: unknown): value is UserData {
   if (!isRecord(value)) return false;
+  if (value.userId !== undefined && typeof value.userId !== 'string') return false;
+  if (value.visitorId !== undefined && typeof value.visitorId !== 'string') return false;
+  if (value.userType !== undefined && typeof value.userType !== 'string') return false;
+  if (value.isLoggedIn !== undefined && typeof value.isLoggedIn !== 'boolean') return false;
+  if (value.loyaltyTier !== undefined && typeof value.loyaltyTier !== 'string') return false;
+  if (value.loyaltyPoints !== undefined && typeof value.loyaltyPoints !== 'number') return false;
   return true;
 }
 
@@ -116,6 +122,15 @@ export function isTransactionData(value: unknown): value is TransactionData {
  */
 export function isHotelSearchData(value: unknown): value is HotelSearchData {
   if (!isRecord(value)) return false;
+  if (value.searchDestination !== undefined && typeof value.searchDestination !== 'string')
+    return false;
+  if (value.searchCheckIn !== undefined && typeof value.searchCheckIn !== 'string') return false;
+  if (value.searchCheckOut !== undefined && typeof value.searchCheckOut !== 'string') return false;
+  if (value.searchAdults !== undefined && typeof value.searchAdults !== 'number') return false;
+  if (value.searchChildren !== undefined && typeof value.searchChildren !== 'number') return false;
+  if (value.searchRooms !== undefined && typeof value.searchRooms !== 'number') return false;
+  if (value.searchFlexibleDates !== undefined && typeof value.searchFlexibleDates !== 'boolean')
+    return false;
   return true;
 }
 
@@ -159,6 +174,23 @@ export function isBookingData(value: unknown): value is BookingData {
  */
 export function isGuestData(value: unknown): value is GuestData {
   if (!isRecord(value)) return false;
+  if (
+    value.guestType !== undefined &&
+    value.guestType !== 'new' &&
+    value.guestType !== 'returning' &&
+    value.guestType !== 'loyalty'
+  )
+    return false;
+  if (value.guestLoyaltyId !== undefined && typeof value.guestLoyaltyId !== 'string') return false;
+  if (value.guestLoyaltyTier !== undefined && typeof value.guestLoyaltyTier !== 'string')
+    return false;
+  if (value.guestLoyaltyPoints !== undefined && typeof value.guestLoyaltyPoints !== 'number')
+    return false;
+  if (
+    value.guestPreferences !== undefined &&
+    !(Array.isArray(value.guestPreferences) && value.guestPreferences.every(isString))
+  )
+    return false;
   return true;
 }
 
@@ -206,12 +238,13 @@ export function isTrackingVariable(value: unknown): value is TrackingVariable {
 export function isTrackingEvent(value: unknown): value is TrackingEvent {
   if (!isRecord(value)) return false;
   const e = value;
+  const variables = e.variables;
   return (
     typeof e.name === 'string' &&
     typeof e.description === 'string' &&
     typeof e.trigger === 'string' &&
-    Array.isArray(e.variables) &&
-    (e.variables as unknown[]).every(isTrackingVariable)
+    Array.isArray(variables) &&
+    variables.every(isTrackingVariable)
   );
 }
 
@@ -221,12 +254,14 @@ export function isTrackingEvent(value: unknown): value is TrackingEvent {
 export function isTrackingSpec(value: unknown): value is TrackingSpec {
   if (!isRecord(value)) return false;
   const spec = value;
+  const variables = spec.variables;
+  const events = spec.events;
   return (
     typeof spec.name === 'string' &&
-    Array.isArray(spec.variables) &&
-    (spec.variables as unknown[]).every(isTrackingVariable) &&
-    Array.isArray(spec.events) &&
-    (spec.events as unknown[]).every(isTrackingEvent)
+    Array.isArray(variables) &&
+    variables.every(isTrackingVariable) &&
+    Array.isArray(events) &&
+    events.every(isTrackingEvent)
   );
 }
 

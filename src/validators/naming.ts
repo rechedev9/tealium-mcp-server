@@ -20,10 +20,6 @@ const KNOWN_PREFIXES: readonly string[] = [
   'guest',
 ];
 
-function hasKnownPrefix(str: string): boolean {
-  return KNOWN_PREFIXES.some((prefix) => str.toLowerCase().startsWith(prefix.toLowerCase()));
-}
-
 // Reserved words that shouldn't be used as variable names
 const RESERVED_WORDS: readonly string[] = [
   'undefined',
@@ -101,11 +97,6 @@ export function suggestVariableName(input: string): string {
     .replace(/[^a-zA-Z0-9\s_-]/g, '')
     .replace(/[-_\s]+(.)?/g, (_, c: string | undefined) => (c !== undefined ? c.toUpperCase() : ''))
     .replace(/^(.)/, (c) => c.toLowerCase());
-
-  // Add appropriate prefix if missing
-  if (!hasKnownPrefix(result)) {
-    // Could add logic to infer prefix from common patterns
-  }
 
   return result;
 }

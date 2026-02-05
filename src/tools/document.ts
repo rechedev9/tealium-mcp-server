@@ -231,8 +231,11 @@ function getTypeString(value: unknown): string {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '*empty*';
+  const MAX_DISPLAY_LENGTH = 30;
   if (typeof value === 'string')
-    return value.length > 30 ? `"${value.slice(0, 30)}..."` : `"${value}"`;
+    return value.length > MAX_DISPLAY_LENGTH
+      ? `"${value.slice(0, MAX_DISPLAY_LENGTH)}..."`
+      : `"${value}"`;
   if (typeof value === 'object') return '*object*';
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);

@@ -70,7 +70,7 @@ function parseJsonSpec(content: string): Result<TrackingSpec, ParseError> {
     }
 
     return failure(new ParseError('Invalid JSON structure', 'json'));
-  } catch (error) {
+  } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return failure(new ParseError(`Failed to parse JSON: ${message}`, 'json'));
   }
@@ -133,27 +133,23 @@ function parseCsvSpec(content: string, hasHeader: boolean): Result<TrackingSpec,
         variables.push(variable);
 
         // Check if this line also defines an event
-        const eventIndex = headerMap.event;
-        if (eventIndex !== undefined) {
-          const eventName = values[eventIndex]?.trim();
+        const eventColIndex = headerMap.event;
+        if (eventColIndex !== undefined) {
+          const eventName = values[eventColIndex]?.trim();
           if (eventName !== undefined && eventName !== '') {
-            let existingEvent = events.find((e) => e.name === eventName);
-            if (existingEvent === undefined) {
-              const newEvent: TrackingEvent = {
+            if (!events.some((e) => e.name === eventName)) {
+              events.push({
                 name: eventName,
                 description: `Event: ${eventName}`,
                 trigger: 'User action',
                 variables: [],
-              };
-              events.push(newEvent);
-              existingEvent = newEvent;
+              });
             }
-            // Find the event index and update it with the new variable
-            const eventIndex = events.findIndex((e) => e.name === eventName);
-            if (eventIndex !== -1) {
-              const oldEvent = events[eventIndex];
+            const matchedEventIndex = events.findIndex((e) => e.name === eventName);
+            if (matchedEventIndex !== -1) {
+              const oldEvent = events[matchedEventIndex];
               if (oldEvent !== undefined) {
-                events[eventIndex] = {
+                events[matchedEventIndex] = {
                   ...oldEvent,
                   variables: [...oldEvent.variables, variable],
                 };
@@ -282,7 +278,7 @@ function parseAllowedValues(value: string | undefined): readonly string[] | unde
         return parsed.map((v: unknown) => String(v));
       }
     } catch {
-      // Fall through to other parsing
+      // JSON array parse failed; will attempt pipe/comma-separated fallback
     }
   }
 

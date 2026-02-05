@@ -270,9 +270,9 @@ export function generateRecommendations(
   issues: readonly DebugIssue[],
   recommendations: string[]
 ): void {
-  // Error count threshold
+  const CRITICAL_ERROR_THRESHOLD = 5;
   const errorCount = issues.filter((i) => i.severity === 'error').length;
-  if (errorCount > 5) {
+  if (errorCount > CRITICAL_ERROR_THRESHOLD) {
     recommendations.push(
       'Consider reviewing your data layer implementation - multiple critical issues detected'
     );

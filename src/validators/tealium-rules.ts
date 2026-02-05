@@ -1,10 +1,12 @@
 import type { ValidationError, ValidationWarning, TealiumDataLayer } from '../types/index.js';
 import { isRecord } from '../types/index.js';
 
+const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
+
 interface TealiumValidationResult {
-  readonly errors: ValidationError[];
-  readonly warnings: ValidationWarning[];
-  readonly suggestions: string[];
+  readonly errors: readonly ValidationError[];
+  readonly warnings: readonly ValidationWarning[];
+  readonly suggestions: readonly string[];
 }
 
 export function validateTealiumRules(dataLayer: TealiumDataLayer): TealiumValidationResult {
@@ -201,9 +203,7 @@ function validateBookingData(
   }
 
   // Verify nights calculation
-  const expectedNights = Math.ceil(
-    (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const expectedNights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / MILLISECONDS_PER_DAY);
   if (booking.bookingNights !== expectedNights) {
     warnings.push({
       path: 'booking.bookingNights',
